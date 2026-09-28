@@ -1,0 +1,4 @@
+*.ps1 text eol=crlf
+*.nsi text eol=crlf
+*.rc text eol=crlf
+*.ico binary
