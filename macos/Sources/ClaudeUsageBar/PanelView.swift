@@ -91,7 +91,7 @@ struct PanelView: View {
                     .padding(.top, 12).padding(.bottom, 12)
             } else {
                 if primary { hero(s, now: now).padding(.top, 16).padding(.bottom, 14) }
-                else { sideHero(s, now: now).padding(.top, 12).padding(.bottom, 12) }
+                else { sideHero(s, now: now).padding(.top, 12).padding(.bottom, 4) }
                 let others = s.rows.filter { $0.id != s.active?.id }
                 if !others.isEmpty {
                     Divider()
@@ -102,7 +102,8 @@ struct PanelView: View {
                     .padding(.vertical, 12)
                 }
             }
-            if !s.stats.isEmpty {
+            // 두 번째 섹션(기본 모드)은 통계를 도넛 오른쪽에 붙였으므로 따로 줄을 두지 않는다
+            if !s.stats.isEmpty && (primary || settings.compactPanel) {
                 Divider()
                 HStack(alignment: .top) {
                     ForEach(Array(s.stats.enumerated()), id: \.offset) { _, st in
@@ -179,23 +180,32 @@ struct PanelView: View {
         }
     }
 
-    /// 두 번째 섹션용: 도넛 옆에 이름·리셋.
+    /// 두 번째 섹션용: 도넛과 그 아래 이름·리셋, 오른쪽에 통계(오늘 토큰 등).
     @ViewBuilder
     private func sideHero(_ s: Section, now: Date) -> some View {
         if let a = s.active {
-            HStack(spacing: 16) {
-                ZStack {
-                    Donut(percent: a.percent, color: Palette.color(for: a, stale: s.stale(a)), lineWidth: 8)
-                    Text("\(Format.percent(a.percent))%").font(.system(size: 18, weight: .medium)).monospacedDigit()
+            // 도넛 칸을 섹션 폭의 절반으로 두어, 오른쪽 통계가 위 섹션의 두 번째 칸(오늘 토큰)과 같은 줄에 선다
+            HStack(alignment: .center, spacing: 0) {
+                VStack(spacing: 6) {
+                    ZStack {
+                        Donut(percent: a.percent, color: Palette.color(for: a, stale: s.stale(a)), lineWidth: 8)
+                        Text("\(Format.percent(a.percent))%").font(.system(size: 18, weight: .medium)).monospacedDigit()
+                    }
+                    .frame(width: 76, height: 76)
+                    VStack(spacing: 1) {
+                        Text(a.name).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(resetText(a, now: now)).font(.system(size: 11)).foregroundStyle(.tertiary).monospacedDigit()
+                    }
                 }
-                .frame(width: 72, height: 72)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(a.name).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
-                    Text(resetText(a, now: now)).font(.system(size: 12)).foregroundStyle(.tertiary).monospacedDigit()
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle()).onTapGesture(perform: toggleReset)
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(s.stats.enumerated()), id: \.offset) { _, st in
+                        stat(st.label, st.value).help(st.help ?? "")
+                    }
                 }
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .contentShape(Rectangle()).onTapGesture(perform: toggleReset)
         }
     }
 
