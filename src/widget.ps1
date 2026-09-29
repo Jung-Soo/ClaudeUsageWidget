@@ -25,6 +25,10 @@ Add-Type -Namespace CUW -Name Native -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
 [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h);
 [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string t);
+[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string t);
+[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, [In, Out] int[] r);
+[DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int s);
 [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
 '@
 
@@ -35,7 +39,7 @@ try { [void][CUW.Native]::SetProcessDPIAware() } catch {}
 [Windows.Forms.Application]::add_ThreadException({ param($s, $e) })
 
 # ---- 설정 ------------------------------------------------------------------------
-$Cfg = @{ X = -1; Y = -1; Interval = 180; IntervalV2 = $false; Opacity = 1.0; ZMode = 'desktop'; AutoRefresh = $true; ShowAbs = $false; Theme = 'light'
+$Cfg = @{ X = -1; Y = -1; Interval = 180; IntervalV2 = $false; Opacity = 1.0; ZMode = 'desktop'; AutoRefresh = $true; ShowAbs = $false; Theme = 'dark'; TaskbarStrip = $true
          Alerts = $true; WarnPct = 85; AlertPct = 95; PaceWarn = $true; CreditAlert = $true; Notified = ''; CreditSeen = -1.0 }
 if (Test-Path $SettingsFile) {
   try { $j = [IO.File]::ReadAllText($SettingsFile) | ConvertFrom-Json; foreach ($p in $j.PSObject.Properties) { if ($Cfg.ContainsKey($p.Name)) { $Cfg[$p.Name] = $p.Value } } } catch {}
@@ -67,14 +71,14 @@ function Set-AutoStart([bool]$on) {
 function C($r, $g, $b, $a = 255) { [Drawing.Color]::FromArgb($a, $r, $g, $b) }
 $Themes = @{
   light = @{
-    Bg = (C 255 255 255); Border = (C 222 224 230); Txt = (C 22 24 30); Sec = (C 92 97 110); Track = (C 233 235 240)
-    Hover = (C 244 245 248); Div = (C 236 238 242); Blue = (C 40 104 232); Amber = (C 214 132 10); Red = (C 214 48 62)
-    Ok = (C 28 160 84); TagBg = (C 229 238 255); TagFg = (C 30 84 200); PillBg = (C 238 239 243)
+    Bg = (C 250 250 253); GradTop = (C 255 255 255); GradBot = (C 244 245 250); Border = (C 222 224 230); Txt = (C 22 24 30); Sec = (C 92 97 110); Dim2 = (C 140 144 156); Track = (C 233 235 240)
+    Hover = (C 0 0 0 14); Div = (C 230 232 238); Blue = (C 40 104 232); Amber = (C 214 132 10); Red = (C 214 48 62)
+    Ok = (C 28 160 84); Week = (C 108 92 214); Five = (C 222 100 56); Model = (C 40 160 104)
   }
   dark = @{
-    Bg = (C 32 33 40); Border = (C 62 64 74); Txt = (C 242 242 246); Sec = (C 170 173 186); Track = (C 58 60 70)
-    Hover = (C 42 44 52); Div = (C 52 54 62); Blue = (C 100 152 255); Amber = (C 242 182 64); Red = (C 242 98 98)
-    Ok = (C 84 204 124); TagBg = (C 44 58 92); TagFg = (C 154 188 255); PillBg = (C 48 50 60)
+    Bg = (C 26 27 38); GradTop = (C 34 35 54); GradBot = (C 21 22 29); Border = (C 70 74 100); Txt = (C 238 238 243); Sec = (C 160 162 178); Dim2 = (C 120 122 138); Track = (C 58 60 70)
+    Hover = (C 255 255 255 14); Div = (C 62 64 78); Blue = (C 100 152 255); Amber = (C 242 182 64); Red = (C 242 98 98)
+    Ok = (C 126 170 52); Week = (C 128 116 226); Five = (C 226 114 74); Model = (C 76 178 128)
   }
 }
 function Set-Theme($name) {
@@ -87,11 +91,12 @@ $form = $null
 Set-Theme $Cfg.Theme
 
 $Fnt = @{
-  Title = (New-Object Drawing.Font('Malgun Gothic', 10, [Drawing.FontStyle]::Bold))
+  Title = (New-Object Drawing.Font('Malgun Gothic', 11.5, [Drawing.FontStyle]::Bold))
   Lbl   = (New-Object Drawing.Font('Malgun Gothic', 9))
-  Pct   = (New-Object Drawing.Font('Segoe UI Semibold', 10))
+  Pct   = (New-Object Drawing.Font('Segoe UI Semibold', 9.5))
   Sec   = (New-Object Drawing.Font('Malgun Gothic', 8.25))
-  Tag   = (New-Object Drawing.Font('Malgun Gothic', 7.5, [Drawing.FontStyle]::Bold))
+  Big   = (New-Object Drawing.Font('Segoe UI Semibold', 24))
+  Val   = (New-Object Drawing.Font('Segoe UI Semibold', 12))
 }
 $SfC = New-Object Drawing.StringFormat; $SfC.LineAlignment = 'Center'; $SfC.Alignment = 'Center'
 $TF = [Windows.Forms.TextFormatFlags]
@@ -168,15 +173,9 @@ $g0 = $form.CreateGraphics(); $script:k = $g0.DpiX / 96.0; $g0.Dispose()
 function Px([double]$v) { [float]($v * $script:k) }
 function PxI([double]$v) { [int][Math]::Round($v * $script:k) }
 
-$BaseW = 240
-$Lay = @{ Header = 38; Row = 34; Line = 28; Footer = 24; Pad = 8 }
-function Get-Height {
-  $h = $Lay.Header + $Lay.Row * (Get-Rows).Count
-  if (Has-Credit) { $h += $(if (Has-CreditLimit) { $Lay.Row } else { $Lay.Line }) }
-  $h += $Lay.Line
-  if ("$(V 'status')" -notin 'ok', '-', 'init') { $h += $Lay.Footer }
-  $h + $Lay.Pad
-}
+$BaseW = 280
+$Lay = @{ Header = 44; Total = 402 }
+function Get-Height { $Lay.Total }
 function Apply-Size {
   $sz = New-Object Drawing.Size((PxI $BaseW), (PxI (Get-Height)))
   if ($form.ClientSize -ne $sz) { $form.ClientSize = $sz; Keep-OnScreen }
@@ -223,8 +222,8 @@ function FillRound($g, $color, [float]$x, [float]$y, [float]$w, [float]$h, [floa
   $g.FillPath($b, $p); $p.Dispose(); $b.Dispose()
 }
 # GDI(ClearType) 텍스트. align: N(좌) F(우) C(가운데), x 는 기준점, cy 는 세로 중심
-function T($g, $text, $font, $color, [float]$x, [float]$cy, $align = 'N') {
-  $w = PxI 400; $h = PxI 28; $top = [int][Math]::Round($cy - $h / 2)
+function T($g, $text, $font, $color, [float]$x, [float]$cy, $align = 'N', [float]$hh = 28) {
+  $w = PxI 400; $h = PxI $hh; $top = [int][Math]::Round($cy - $h / 2)
   switch ($align) {
     'F' { $rect = New-Object Drawing.Rectangle(([int][Math]::Round($x) - $w), $top, $w, $h); $fl = $TFBase -bor $TF::Right }
     'C' { $rect = New-Object Drawing.Rectangle(([int][Math]::Round($x - $w / 2)), $top, $w, $h); $fl = $TFBase -bor $TF::HorizontalCenter }
@@ -238,14 +237,21 @@ function Reg($id, [float]$x, [float]$y, [float]$w, [float]$h, $tipText) {
 }
 
 # ---- 섹션별 그리기 -------------------------------------------------------------------------
-function ShortLeft($ts) {
+# 남은 시간을 "2일 17시간" / "3시간 58분" / "12분" 으로. 절대 시각 모드면 "9/30 04:00"
+function KoLeft($ts) {
   $n = 0L; if (-not [int64]::TryParse("$ts", [ref]$n) -or $n -le 0) { return '' }
   if ($Cfg.ShowAbs) { return [DateTimeOffset]::FromUnixTimeSeconds($n).ToLocalTime().ToString('M/d HH:mm', [Globalization.CultureInfo]::InvariantCulture) }
   $s = $n - (NowTs); if ($s -le 0) { return '곧' }
   $d = [Math]::Floor($s / 86400); $h = [Math]::Floor(($s % 86400) / 3600); $m = [Math]::Floor(($s % 3600) / 60)
-  if ($d -ge 1) { return ('{0}d {1}h' -f $d, $h) }
-  if ($h -ge 1) { return ('{0}h {1}m' -f $h, $m) }
-  return ('{0}m' -f [Math]::Max(1, $m))
+  if ($d -ge 1) { return ('{0}일 {1}시간' -f $d, $h) }
+  if ($h -ge 1) { return ('{0}시간 {1}분' -f $h, $m) }
+  return ('{0}분' -f [Math]::Max(1, $m))
+}
+function ResetText($ts) {
+  $k = KoLeft $ts; if ($k -eq '') { return '' }
+  if ($Cfg.ShowAbs) { return "$k 리셋" }
+  if ($k -eq '곧') { return '곧 리셋' }
+  return "$k 후 리셋"
 }
 function Status-Text {
   switch ("$(V 'status')") {
@@ -258,95 +264,141 @@ function Status-Text {
     default     { '' }
   }
 }
+function Plan-Text {
+  $p = "$(V 'plan')"; $t = "$(V 'tier')"; $tier = ''
+  if ($t -match 'max_(\d+)x') { $tier = 'Max ' + $Matches[1] + 'x' }
+  $name = if ($p -in '-', '') { '' } else { (Get-Culture).TextInfo.ToTitleCase($p) }
+  if ($name -eq 'Max' -and $tier) { return $tier }
+  if ($name -and $tier) { return "$name · $tier" }
+  if ($name) { return $name }
+  return $tier
+}
+function AgeText {
+  $n = 0L; if (-not [int64]::TryParse("$(V 'api_ts')", [ref]$n) -or $n -le 0) { return '' }
+  $s = (NowTs) - $n
+  if ($s -lt 60) { return '방금 갱신' }
+  if ($s -lt 3600) { return ('{0}분 전 갱신' -f [Math]::Floor($s / 60)) }
+  return ('{0}시간 전 갱신' -f [Math]::Floor($s / 3600))
+}
+function RingColor($base, [double]$p) { if ($p -ge 90) { $Col.Red } elseif ($p -ge 70) { $Col.Amber } else { $base } }
+function Ring($g, [float]$cx, [float]$cy, [float]$r, [float]$sw, $color, [double]$pct) {
+  $rect = New-Object Drawing.RectangleF(($cx - $r), ($cy - $r), ($r * 2), ($r * 2))
+  $tp = New-Object Drawing.Pen(([Drawing.Color]::FromArgb(50, $color.R, $color.G, $color.B)), $sw); $g.DrawEllipse($tp, $rect); $tp.Dispose()
+  if ($pct -gt 0.4) {
+    $pen = New-Object Drawing.Pen($color, $sw); $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
+    $g.DrawArc($pen, $rect, -90.0, [float][Math]::Min(359.9, 3.6 * $pct)); $pen.Dispose()
+  }
+}
 
 function Draw-Header($g, [float]$W, [float]$y) {
-  $cy = $y + (Px 20)
-  T $g 'Claude' $Fnt.Title $Col.Txt (Px 16) $cy
+  $cy = $y + (Px 22)
+  T $g 'Claude' $Fnt.Title $Col.Txt (Px 20) $cy
+  $plan = Plan-Text
+  if ($plan) { T $g $plan $Fnt.Lbl $Col.Sec ((Px 20) + (TW 'Claude' $Fnt.Title) + (Px 8)) $cy }
+  # 우측: 상태 점 / 새로고침 / 더보기(...)
   $st = V 'status'
   $dc = switch -Regex ($st) { '^ok$' { $Col.Ok } '^(429|error)$' { $Col.Amber } '^(auth|expired|nocred|credwrite)$' { $Col.Red } default { $Col.Track } }
-  $dx = $W - (Px 19); $r = Px 3.5
+  $r = Px 4; $dx = $W - (Px 88)
   FillRound $g $dc ($dx - $r) ($cy - $r) ($r * 2) ($r * 2) $r
-  # 새로고침 버튼
-  $bx = $W - (Px 40); $br = Px 11
+  $bx = $W - (Px 56); $br = Px 12
   $hov = ($script:hover -eq 'refresh')
   if ($hov) { FillRound $g $Col.Hover ($bx - $br) ($cy - $br) ($br * 2) ($br * 2) $br }
   $state = $g.Save()
   $g.TranslateTransform($bx, $cy); $g.RotateTransform([float]$script:spin)
   $pen = New-Object Drawing.Pen($(if ($hov -or (Busy)) { $Col.Txt } else { $Col.Sec }), (Px 1.6))
   $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
-  $ar = Px 5.5
+  $ar = Px 6
   $g.DrawArc($pen, -$ar, -$ar, $ar * 2, $ar * 2, 20, 290)
   $ax = [float]($ar * [Math]::Cos(20 * [Math]::PI / 180)); $ay = [float]($ar * [Math]::Sin(20 * [Math]::PI / 180))
   $g.DrawLine($pen, $ax, $ay, $ax + (Px 3), $ay - (Px 1))
   $g.DrawLine($pen, $ax, $ay, $ax + (Px 0.6), $ay - (Px 3.4))
   $pen.Dispose(); $g.Restore($state)
   Reg 'refresh' ($bx - $br) ($cy - $br) ($br * 2) ($br * 2) ''
+  $mx = $W - (Px 24)
+  $mh = ($script:hover -eq 'menu')
+  if ($mh) { FillRound $g $Col.Hover ($mx - $br) ($cy - $br) ($br * 2) ($br * 2) $br }
+  $mb = New-Object Drawing.SolidBrush($(if ($mh) { $Col.Txt } else { $Col.Sec })); $dr = Px 1.7
+  foreach ($o in -5.5, 0, 5.5) { $g.FillEllipse($mb, [float]($mx + (Px $o) - $dr), [float]($cy - $dr), [float]($dr * 2), [float]($dr * 2)) }
+  $mb.Dispose()
+  Reg 'menu' ($mx - $br) ($cy - $br) ($br * 2) ($br * 2) ''
   return $y + (Px $Lay.Header)
 }
 
-# 한 줄: 라벨 ........ [보조] 값   (+ 선택적 막대)
-function Draw-Line($g, [float]$W, [float]$y, $id, $label, $value, $sub, [bool]$dot, $barPct, $barShown, [float]$height) {
-  $hov = ($script:hover -eq $id)
-  if ($hov -and $id) { FillRound $g $Col.Hover (Px 6) $y ($W - (Px 12)) $height (Px 7) }
-  $cy = $y + (Px 12)
-  T $g $label $Fnt.Lbl $Col.Txt (Px 16) $cy
-  if ($dot) {   # 지금 걸린 한도: 라벨 앞 여백에 작은 화살표, 색은 사용률 따라 (파랑/주황/빨강)
-    $ax = Px 9; $ay = $cy + (Px 0.5); $hw = Px 3.5
-    $pts = [Drawing.PointF[]]@((New-Object Drawing.PointF(($ax - $hw * 0.7), ($ay - $hw))), (New-Object Drawing.PointF(($ax - $hw * 0.7), ($ay + $hw))), (New-Object Drawing.PointF(($ax + $hw * 0.9), $ay)))
-    $ab = New-Object Drawing.SolidBrush((PctColor $(if ($null -ne $barPct) { $barPct } else { 0 })))
-    $g.FillPolygon($ab, $pts); $ab.Dispose()
-  }
-  T $g $value $Fnt.Pct $Col.Txt ($W - (Px 16)) $cy 'F'
-  if ($sub) { T $g $sub $Fnt.Sec $Col.Sec ($W - (Px 16) - (TW $value $Fnt.Pct) - (Px 8)) $cy 'F' }
-  if ($null -ne $barPct) {
-    $bh = Px 4; $by = $y + (Px 26) - $bh / 2; $bw = $W - (Px 32)
-    FillRound $g $Col.Track (Px 16) $by $bw $bh ($bh / 2)
-    FillRound $g (PctColor $barPct) (Px 16) $by ($bw * $barShown / 100.0) $bh ($bh / 2)
-  }
-  if ($id) { Reg $id (Px 6) $y ($W - (Px 12)) $height '' }
-  return $y + $height
-}
-
-function Draw-Footer($g, [float]$W, [float]$y) {
-  $st = V 'status'
-  if ($st -in 'ok', '-', 'init') { return $y }
-  $c = if ($st -match '^(429|error)$') { $Col.Amber } else { $Col.Red }
-  T $g (Status-Text) $Fnt.Sec $c (Px 16) ($y + (Px 11))
-  if ("$(V 'err')" -ne '-') { Reg 'err' (Px 8) $y ($W - (Px 16)) (Px 22) '' }
-  return $y + (Px $Lay.Footer)
+# 작은 링 + 라벨/남은 시간 (한 칸)
+function Draw-MiniRing($g, [float]$x0, [float]$y, $id, $label, $row, $base) {
+  $cy = $y + (Px 34); $r = Px 20
+  if ($script:hover -eq $id) { FillRound $g $Col.Hover ($x0 - (Px 8)) ($y + (Px 4)) (Px 128) (Px 60) (Px 10) }
+  $shown = Anim $row.Key
+  Ring $g ($x0 + $r) $cy $r (Px 5) (RingColor $base $row.Pct) $shown
+  T $g ('{0:0}' -f $shown) $Fnt.Pct $Col.Txt ($x0 + $r) $cy 'C'
+  T $g $label $Fnt.Lbl $Col.Txt ($x0 + (Px 52)) ($cy - (Px 8))
+  T $g (KoLeft $row.Ts) $Fnt.Sec $Col.Dim2 ($x0 + (Px 52)) ($cy + (Px 10))
+  Reg $id ($x0 - (Px 8)) ($y + (Px 4)) (Px 128) (Px 60) ''
 }
 
 function Draw-Card($g) {
   $g.SmoothingMode = 'AntiAlias'; $g.PixelOffsetMode = 'HighQuality'
   $script:regions.Clear()
   $W = [float]$form.ClientSize.Width
-  $g.Clear($Col.Bg)
+  $rc = New-Object Drawing.Rectangle(0, 0, $form.ClientSize.Width, $form.ClientSize.Height)
+  $gb = New-Object Drawing.Drawing2D.LinearGradientBrush($rc, $Col.GradTop, $Col.GradBot, 90.0); $g.FillRectangle($gb, $rc); $gb.Dispose()
   if ([Environment]::OSVersion.Version.Build -lt 22000) {
     $pen = New-Object Drawing.Pen($Col.Border, 1); $g.DrawRectangle($pen, 0, 0, ($form.ClientSize.Width - 1), ($form.ClientSize.Height - 1)); $pen.Dispose()
   }
-  $y = [float]0
-  $y = Draw-Header $g $W $y
-  foreach ($row in (Get-Rows)) {
-    $shown = Anim $row.Key
-    $y = Draw-Line $g $W $y $row.Id $row.Label ('{0:0}%' -f $shown) (ShortLeft $row.Ts) ([bool]$row.Active) $row.Pct $shown (Px $Lay.Row)
-  }
-  if (Has-Credit) {
-    if (Has-CreditLimit) {
-      $y = Draw-Line $g $W $y '' '크레딧' (Money (V 'cr_used')) ('/ ' + (Money (V 'cr_limit'))) $false (ToPct (V 'cr_pct')) (Anim 'credit') (Px $Lay.Row)
-    } else {
-      $y = Draw-Line $g $W $y '' '크레딧' (Money (V 'cr_used')) '' $false $null 0 (Px $Lay.Line)
-    }
-  }
+  $y = Draw-Header $g $W ([float]0)
+  $rows = Get-Rows
+  $rw = $rows | Where-Object { $_.Key -eq 'week' } | Select-Object -First 1
+  $r5 = $rows | Where-Object { $_.Key -eq 'five' } | Select-Object -First 1
+  $m0 = $rows | Where-Object { $_.Id -eq 'm0' } | Select-Object -First 1
+
+  # 큰 링: 주간
+  $cx = $W / 2; $cy = $y + (Px 78); $R = Px 62
+  if ($script:hover -eq 'rw') { FillRound $g $Col.Hover ($cx - (Px 100)) ($y + (Px 6)) (Px 200) (Px 168) (Px 14) }
+  $shown = Anim 'week'
+  Ring $g $cx $cy $R (Px 13) (RingColor $Col.Week $rw.Pct) $shown
+  T $g ('{0:0}%' -f $shown) $Fnt.Big $Col.Txt $cx ($cy - (Px 6)) 'C' 44
+  T $g '주간' $Fnt.Lbl $Col.Sec $cx ($cy + (Px 22)) 'C'
+  T $g (ResetText $rw.Ts) $Fnt.Lbl $Col.Sec $cx ($cy + $R + (Px 24)) 'C'
+  Reg 'rw' ($cx - (Px 100)) ($y + (Px 6)) (Px 200) (Px 168) ''
+  $y += Px 198
+
+  # 구분선 + 작은 링 2개 (5시간 / 최다 모델 주간)
+  $dp = New-Object Drawing.Pen($Col.Div, 1)
+  $g.DrawLine($dp, (Px 20), $y, ($W - (Px 20)), $y)
+  Draw-MiniRing $g (Px 20) $y 'r5' '5시간' $r5 $Col.Five
+  if ($m0) { Draw-MiniRing $g (Px 146) $y 'm0' ("$($m0.Label) 주간") $m0 $Col.Model }
+  $y += Px 68
+  $g.DrawLine($dp, (Px 20), $y, ($W - (Px 20)), $y); $dp.Dispose()
+
+  # 크레딧 / 오늘 토큰
   $raw = "$(V 't_raw')".Split(','); $sum = 0.0
   foreach ($x in $raw) { $n = 0.0; if ([double]::TryParse($x, [ref]$n)) { $sum += $n } }
-  $y = Draw-Line $g $W $y '' '오늘 토큰' (Human $sum) '' $false $null 0 (Px $Lay.Line)
+  $x1 = Px 20
+  if (Has-Credit) {
+    T $g '크레딧' $Fnt.Lbl $Col.Sec $x1 ($y + (Px 20))
+    $val = Money (V 'cr_used'); T $g $val $Fnt.Val $Col.Txt $x1 ($y + (Px 44))
+    if (Has-CreditLimit) { T $g ('/ ' + (Money (V 'cr_limit'))) $Fnt.Sec $Col.Dim2 ($x1 + (TW $val $Fnt.Val) + (Px 5)) ($y + (Px 45)) }
+    $x1 = Px 146
+  }
+  T $g '오늘 토큰' $Fnt.Lbl $Col.Sec $x1 ($y + (Px 20))
+  T $g (Human $sum) $Fnt.Val $Col.Txt $x1 ($y + (Px 44))
+  $y += Px 70
+
+  # 하단: 갱신 시각 또는 오류 상태
+  $st = V 'status'
+  if ($st -in 'ok', '-', 'init') { T $g (AgeText) $Fnt.Sec $Col.Dim2 ($W / 2) ($y + (Px 8)) 'C' }
+  else {
+    $c = if ($st -match '^(429|error)$') { $Col.Amber } else { $Col.Red }
+    T $g (Status-Text) $Fnt.Sec $c ($W / 2) ($y + (Px 8)) 'C'
+    if ("$(V 'err')" -ne '-') { Reg 'err' (Px 8) ($y - (Px 6)) ($W - (Px 16)) (Px 24) '' }
+  }
   if ($script:flashUntil -gt [DateTime]::Now) {
     $a = [int](90 + 165 * (0.5 + 0.5 * [Math]::Sin([Environment]::TickCount / 110.0)))
     $pen = New-Object Drawing.Pen(([Drawing.Color]::FromArgb($a, $Col.Red.R, $Col.Red.G, $Col.Red.B)), (Px 3))
     $g.DrawRectangle($pen, (Px 1.5), (Px 1.5), ($form.ClientSize.Width - (Px 3)), ($form.ClientSize.Height - (Px 3))); $pen.Dispose()
   }
-  [void](Draw-Footer $g $W $y)
 }
+
 $form.Add_Paint({ param($s, $e) try { Draw-Card $e.Graphics } catch {} })
 
 
@@ -385,6 +437,7 @@ function Read-Usage {
   $script:Models = $ms
   Apply-Size
   try { Update-Tray } catch {}
+  try { Update-Strip } catch {}
   try { if ("$(V 'status')" -eq 'ok') { Check-Alerts } } catch {}
   Kick
 }
@@ -558,6 +611,8 @@ $miCr = New-Object Windows.Forms.ToolStripMenuItem('추가 크레딧 사용 알�
 [void]$miAl.DropDownItems.Add('-')
 $mi = $miAl.DropDownItems.Add('알림 테스트'); $mi.Add_Click({ $old = $Cfg.Alerts; $Cfg.Alerts = $true; Toast '5시간 한도 95%' '알림 테스트입니다 · 실제 한도가 이 정도면 이렇게 알려 드려요.' $true; Flash-Widget; $Cfg.Alerts = $old })
 [void]$menu.Items.Add($miAl)
+$miStrip = New-Object Windows.Forms.ToolStripMenuItem('작업표시줄에 요약 표시')
+$miStrip.Add_Click({ $Cfg.TaskbarStrip = -not $Cfg.TaskbarStrip; Save-Settings; Update-Strip }); [void]$menu.Items.Add($miStrip)
 $miAuto = New-Object Windows.Forms.ToolStripMenuItem('Windows 시작 시 실행')
 $miAuto.Add_Click({ Set-AutoStart (-not (Test-AutoStart)) }); [void]$menu.Items.Add($miAuto)
 [void]$menu.Items.Add('-')
@@ -566,7 +621,7 @@ $mi = $menu.Items.Add('데이터 폴더 열기'); $mi.Add_Click({ Start-Process 
 $mi = $menu.Items.Add('종료'); $mi.Add_Click({ $form.Close() })
 $menu.Add_Opening({
   foreach ($i in $miTheme.DropDownItems) { $i.Checked = ("$($i.Tag)" -eq "$($Cfg.Theme)") }
-  $miRef.Checked = [bool]$Cfg.AutoRefresh; $miAuto.Checked = Test-AutoStart
+  $miStrip.Checked = [bool]$Cfg.TaskbarStrip; $miRef.Checked = [bool]$Cfg.AutoRefresh; $miAuto.Checked = Test-AutoStart
   $miAlOn.Checked = [bool]$Cfg.Alerts; $miPace.Checked = [bool]$Cfg.PaceWarn; $miCr.Checked = [bool]$Cfg.CreditAlert
   foreach ($i in $miAl.DropDownItems) { if ($i.Tag) { $i.Checked = ("$($i.Tag)" -eq "$($Cfg.WarnPct),$($Cfg.AlertPct)") } }
   foreach ($i in $miZ.DropDownItems)   { $i.Checked = ("$($i.Tag)" -eq "$($Cfg.ZMode)") }
@@ -576,6 +631,67 @@ $menu.Add_Opening({
 $form.ContextMenuStrip = $menu
 $tray.ContextMenuStrip = $menu
 $tray.Add_MouseClick({ param($s, $e) if ($e.Button -eq 'Left') { $form.Show(); $form.Activate(); Kick } })
+
+# ---- 작업표시줄 요약: 트레이 왼쪽에 "5시간 · 주간 · 모델" 숫자를 겹쳐 띄우는 작은 창 -----------------------
+# Windows 에는 작업표시줄에 글자를 넣는 공식 방법이 없어, 테두리 없는 작은 창을 트레이 옆에 맞춰 둔다.
+$strip = New-Object Windows.Forms.Form
+$strip.FormBorderStyle = 'None'; $strip.ShowInTaskbar = $false; $strip.StartPosition = 'Manual'; $strip.TopMost = $true
+$strip.GetType().GetProperty('DoubleBuffered', [Reflection.BindingFlags]'NonPublic,Instance').SetValue($strip, $true, $null)
+$strip.ClientSize = New-Object Drawing.Size((PxI 120), (PxI 40))
+$FntStrip = New-Object Drawing.Font('Segoe UI Semibold', 10.5)
+$script:stripInit = $false; $script:stripKey = $null
+
+function Taskbar-IsLight {
+  try { [int](Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name SystemUsesLightTheme -ErrorAction Stop).SystemUsesLightTheme -eq 1 } catch { $false }
+}
+function Strip-Values {
+  $v = @(@{ P = (ToPct (V 'five')); Base = $Col.Five }, @{ P = (ToPct (V 'week')); Base = $Col.Week })
+  if ($script:Models.Count -gt 0) { $v += @{ P = [double]$script:Models[0].Pct; Base = $Col.Model } }
+  , $v
+}
+function Update-Strip {
+  if (-not $Cfg.TaskbarStrip) { if ($strip.Visible) { $strip.Hide() }; return }
+  $ns = 0; [void][CUW.Native]::SHQueryUserNotificationState([ref]$ns)
+  $tb = [CUW.Native]::FindWindow('Shell_TrayWnd', $null)
+  $r = New-Object 'int[]' 4
+  if ($ns -in 2, 3, 4 -or $tb -eq [IntPtr]::Zero -or -not [CUW.Native]::GetWindowRect($tb, $r)) { if ($strip.Visible) { $strip.Hide() }; return }
+  $tl = $r[0]; $tt = $r[1]; $tw = $r[2] - $r[0]; $th = $r[3] - $r[1]
+  if ($th -gt $tw) { if ($strip.Visible) { $strip.Hide() }; return }                     # 세로 작업표시줄은 미지원
+  $right = $r[2] - (PxI 8)
+  $nw = [CUW.Native]::FindWindowEx($tb, [IntPtr]::Zero, 'TrayNotifyWnd', $null); $nr = New-Object 'int[]' 4
+  if ($nw -ne [IntPtr]::Zero -and [CUW.Native]::GetWindowRect($nw, $nr) -and $nr[0] -gt $tl) { $right = $nr[0] }
+  $vals = Strip-Values
+  $w = (PxI 20); foreach ($x in $vals) { $w += (TW ('{0:0}' -f $x.P) $FntStrip) }; $w += (PxI 22) * ($vals.Count - 1)
+  $light = Taskbar-IsLight
+  $key = if ($light) { C 254 254 253 } else { C 1 1 2 }
+  if (-not $script:stripKey -or $script:stripKey -ne $key) { $strip.BackColor = $key; $strip.TransparencyKey = $key; $script:stripKey = $key }
+  $script:stripLight = $light
+  if (-not $script:stripInit) {
+    $script:stripInit = $true
+    $ex = [CUW.Native]::GetWindowLong($strip.Handle, -20)
+    [void][CUW.Native]::SetWindowLong($strip.Handle, -20, ($ex -bor 0x08000080))          # NOACTIVATE + TOOLWINDOW
+  }
+  [void][CUW.Native]::SetWindowPos($strip.Handle, [IntPtr](-1), ($right - $w), $tt, $w, $th, 0x0050)   # TOPMOST, 활성화 없이 표시
+  $tip = '5시간 · 주간' + $(if ($script:Models.Count -gt 0) { " · $($script:Models[0].Name) 주간" } else { '' })
+  if ($ToolTip.GetToolTip($strip) -ne $tip) { $ToolTip.SetToolTip($strip, $tip) }
+  $strip.Invalidate()
+}
+function Draw-Strip($g) {
+  $g.Clear($script:stripKey)
+  $H = [float]$strip.ClientSize.Height; $cy = $H / 2
+  $txt = if ($script:stripLight) { C 96 100 112 } else { C 170 172 186 }
+  $x = Px 10; $first = $true
+  foreach ($v in (Strip-Values)) {
+    if (-not $first) { T $g '·' $FntStrip $txt ($x + (Px 8)) $cy 'C'; $x += Px 22 }
+    $first = $false
+    $s = '{0:0}' -f $v.P
+    T $g $s $FntStrip (RingColor $v.Base $v.P) $x $cy
+    $x += TW $s $FntStrip
+  }
+}
+$strip.Add_Paint({ param($s, $e) try { Draw-Strip $e.Graphics } catch {} })
+$strip.ContextMenuStrip = $menu
+$strip.Add_MouseUp({ param($s, $e) if ($e.Button -eq 'Left') { $form.Show(); $form.Activate(); Kick } })
 
 # ---- 마우스 --------------------------------------------------------------------------------
 function HitTest($pt) { for ($i = $script:regions.Count - 1; $i -ge 0; $i--) { $r = $script:regions[$i]; if ($r.R.Contains([float]$pt.X, [float]$pt.Y)) { return $r } }; $null }
@@ -595,7 +711,7 @@ $form.Add_MouseMove({ param($s, $e)
   $id = if ($r) { $r.Id } else { '' }
   if ($id -ne $script:hover) {
     $script:hover = $id
-    $form.Cursor = if ($id -eq 'refresh' -or $id -eq 'err' -or $id -match '^(r5|rw|m\d+)$') { [Windows.Forms.Cursors]::Hand } else { [Windows.Forms.Cursors]::Default }
+    $form.Cursor = if ($id -eq 'refresh' -or $id -eq 'menu' -or $id -eq 'err' -or $id -match '^(r5|rw|m\d+)$') { [Windows.Forms.Cursors]::Hand } else { [Windows.Forms.Cursors]::Default }
     $form.Invalidate()
   }
 })
@@ -606,6 +722,7 @@ $form.Add_MouseUp({ param($s, $e)
   $r = HitTest $e.Location; if (-not $r) { return }
   switch ($r.Id) {
     'refresh' { Start-Fetch $true }
+    'menu'    { $script:menu.Show($form, $e.Location) }
     'err'     { try { [Windows.Forms.Clipboard]::SetText("$(V 'err')") } catch {} }
     { $_ -match '^(r5|rw|m\d+)$' } { $Cfg.ShowAbs = -not $Cfg.ShowAbs; Save-Settings; $form.Invalidate() }
   }
@@ -621,6 +738,7 @@ $timer.Add_Tick({
     Check-Job
     if ($script:tick % 10 -eq 0) { Start-Fetch $false }
     if ($script:tick % 3 -eq 0) { Apply-ZOrder }
+    Update-Strip
     if (-not $fast.Enabled) { $form.Invalidate() }     # 남은 시간 카운트다운
   } catch {}
 })
@@ -639,7 +757,7 @@ $form.Add_Shown({
   $timer.Start(); Kick
 })
 $form.Add_FormClosed({
-  $timer.Stop(); $fast.Stop(); $tray.Visible = $false; $tray.Dispose()
+  $timer.Stop(); $fast.Stop(); $tray.Visible = $false; $tray.Dispose(); try { $strip.Close() } catch {}
   if ($script:trayHandle) { [void][CUW.Native]::DestroyIcon($script:trayHandle) }
   try { $script:rs.Close() } catch {}
   try { $mutex.ReleaseMutex() } catch {}

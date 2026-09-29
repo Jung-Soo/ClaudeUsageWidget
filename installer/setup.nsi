@@ -5,7 +5,7 @@ Unicode true
 
 !define APPNAME   "Claude Usage Widget"
 !define APPKEY    "ClaudeUsageWidget"
-!define VERSION   "1.4.3"
+!define VERSION   "1.5.0"
 !define PUBLISHER "WineSOFT IT"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPKEY}"
 !define RUNKEY    "Software\Microsoft\Windows\CurrentVersion\Run"

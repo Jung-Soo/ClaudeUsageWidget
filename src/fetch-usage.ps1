@@ -34,7 +34,7 @@ $st = $global:CUW
 
 # ---- defaults / previous values (kept when the API is skipped or fails) ---------------
 $d = [ordered]@{
-  status = 'init'; plan = '-'
+  status = 'init'; plan = '-'; tier = '-'; api_ts = ''
   five = '0'; five_left = '-'; five_at = '-'
   week = '0'; week_left = '-'; week_at = '-'
   sc_name = '-'; sc = '0'; sc_left = '-'
@@ -163,6 +163,7 @@ if ($forceOk -or $now -ge $st.NextApi) {
     $o = ([IO.File]::ReadAllText($credPath) | ConvertFrom-Json).claudeAiOauth
     if (-not $o -or -not $o.accessToken) { throw 'nocred' }
     if ($o.subscriptionType) { $d.plan = "$($o.subscriptionType)" }
+    if ($o.rateLimitTier) { $d.tier = "$($o.rateLimitTier)" }
     $expired = $o.expiresAt -and ([DateTimeOffset]::FromUnixTimeMilliseconds([int64]$o.expiresAt) -lt [DateTimeOffset]::UtcNow.AddSeconds(60))
     if ($expired) { if ($AutoRefresh) { $o = Refresh-Token $credPath $o } else { throw 'expired' } }
 
@@ -220,7 +221,7 @@ if ($forceOk -or $now -ge $st.NextApi) {
       elseif ($ex.monthly_limit -and [double]$ex.monthly_limit -gt 0) { $d.cr_pct = Pct (100.0 * [double]$ex.used_credits / [double]$ex.monthly_limit) }
     }
     try { WriteAtomic (Join-Path (Split-Path -Parent $Out) 'usage-raw.json') ($r | ConvertTo-Json -Depth 20) } catch {}   # 응답 원본 (토큰 없음, 확인용)
-    $st.Backoff = 0; $d.err = ''; $d.status = 'ok'; $d.api_at = $now.ToString('HH:mm:ss', $inv)
+    $st.Backoff = 0; $d.err = ''; $d.status = 'ok'; $d.api_at = $now.ToString('HH:mm:ss', $inv); $d.api_ts = "$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
   }
   catch {
     $msg = "$($_.Exception.Message)"; $code = HttpCode $_
