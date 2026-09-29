@@ -17,6 +17,10 @@ public struct LimitRow: Sendable, Equatable, Codable, Identifiable {
     public var resetsAt: Date?
     public var isActive: Bool
     public var severity: String?
+    /// 리셋 시각이 추정값(5시간 창을 데스크톱 기록으로 추정). 옵셔널이라 예전 state.json도 읽힌다.
+    public var resetEstimated: Bool? = nil
+    /// 사용률이 추정값(리셋 시각이 지나 0%로 본 경우. 그 사이 다른 곳에서 썼다면 실제와 다를 수 있음).
+    public var percentInferred: Bool? = nil
 
     public init(kind: LimitKind, name: String, percent: Double, resetsAt: Date?, isActive: Bool, severity: String? = nil) {
         switch kind {
@@ -73,4 +77,6 @@ public enum FetchStatus: Sendable, Equatable, Codable {
     case noCredential
     case auth
     case error(String)
+    /// 구독 로그인 없이 API 키만 쓰는 경우. 5시간·주간 한도가 없다.
+    case apiKeyOnly
 }

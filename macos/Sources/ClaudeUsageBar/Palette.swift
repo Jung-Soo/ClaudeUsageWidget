@@ -27,7 +27,7 @@ enum Palette {
     static func statusDot(_ s: FetchStatus) -> Color {
         switch s {
         case .ok: ok
-        case .idle, .tokenExpired: Color.secondary.opacity(0.5)
+        case .idle, .tokenExpired, .apiKeyOnly: Color.secondary.opacity(0.5)
         case .rateLimited, .error: warn
         case .auth, .noCredential: danger
         }

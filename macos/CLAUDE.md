@@ -1,6 +1,6 @@
 # Claude Usage Bar (macOS) — Claude Code 작업 안내
 
-Claude Code 구독 플랜 사용량(5시간 / 주간 / 모델별 주간 한도, 추가 크레딧, 오늘 토큰)과 Codex CLI 한도를 메뉴바에 보여 주는 macOS 앱.
+Claude Code 구독 플랜 사용량(5시간 / 주간 / 모델별 주간 한도, 추가 크레딧, 오늘 토큰)과 Codex(앱·CLI·VS Code 확장이 같은 로그를 씀) 한도를 메뉴바에 보여 주는 macOS 앱.
 사용자 가이드는 `docs/GUIDE.md`, 사용자에게 설명할 때는 그 문서의 표현을 따른다.
 
 ## 명령
@@ -18,13 +18,13 @@ swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이
 ## 구조
 
 - `Sources/UsageCore/` — UI 없는 로직, 전부 단위 테스트 대상
-  - `Credentials.swift` 키체인 `Claude Code-credentials`를 `/usr/bin/security`로 읽기(팝업 없음). `CLAUDE_CONFIG_DIR/.credentials.json`이 있으면 우선
+  - `Credentials.swift` 키체인 `Claude Code-credentials`를 `/usr/bin/security`로 읽기(팝업 없음). `CLAUDE_CONFIG_DIR/.credentials.json`이 있으면 우선. `AuthHints`로 API 키 사용자 구분(`~/.claude.json`의 `primaryApiKey`, `~/.codex/auth.json`의 `auth_mode`), 값은 읽지 않음
   - `UsageAPIClient.swift` / `UsageResponse.swift` `GET https://api.anthropic.com/api/oauth/usage`(비공식). 모든 필드 옵셔널로 관대하게 디코딩
   - `FetchPolicy.swift` 주기(최소 120초), 429 백오프 5→10→20→30분, 수동 갱신도 2분에 한 번(API 호출 규칙), 재시작 후 유지
   - `DesktopHistory.swift` Claude 데스크톱 앱 기록 `~/Library/Application Support/Claude/plan-usage-history.json`(version 2만)
-  - `DisplayResolver.swift` API 값(신선하면) → 데스크톱 기록(토큰 만료 시) → 오래된 API 값(회색) 순으로 표시 결정
+  - `DisplayResolver.swift` API 값(신선하면) → 데스크톱 기록(토큰 만료 시) → 오래된 API 값(회색) 순으로 표시 결정. 지난 리셋은 0%(`percentInferred`)·주간은 7일씩 넘겨 다음 리셋 계산, 5시간 리셋은 데스크톱 기록으로 추정(`resetEstimated`, 실측 오차 +7분)
   - `SessionLogScanner.swift` `~/.claude/projects/**/*.jsonl` 오늘 토큰 증분 집계, `message.id|requestId` 중복 제거
-  - `CodexUsage.swift` `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`(또는 `CODEX_HOME`)에서 `token_count` 이벤트의 `rate_limits`를 한도(`limit_id`)별로 마지막 값만 읽음. 세션 로그가 수 GB라 최근 30일 폴더·8일 안에 수정된 파일의 끝부분만 읽고, 수정 시각이 같으면 다시 읽지 않는다. 꼬리에 없는 한도는 오늘 로그 전체 스캔(`CodexTokenScanner.limits`)과 `state.json`에 저장한 값으로 보완(`CodexSnapshot.merged`)
+  - `CodexUsage.swift` `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`(또는 `CODEX_HOME`)에서 `token_count` 이벤트의 `rate_limits`를 한도(`limit_id`)별로 마지막 값만 읽음. 세션 로그가 수 GB라 최근 30일 폴더·8일 안에 수정된 파일의 끝부분만 읽고, 수정 시각이 같으면 다시 읽지 않는다. 꼬리에 없는 한도는 오늘 로그 전체 스캔(`CodexTokenScanner.limits`)과 `state.json`에 저장한 값으로 보완(`CodexSnapshot.merged`). 기본 한도 `codex`는 8일이 지나도 남기고(리셋 지났으면 0%), 모델별 추가 한도만 8일 뒤 숨김
   - `AlertEngine.swift` 경고/위험/100%/속도 예측/크레딧 알림 규칙(Codex 한도에도 같은 규칙, 제목에 "Codex"). 주기 구분은 리셋 시각 기준이되 5분 안의 흔들림은 같은 주기(Codex resets_at이 ±1초씩 흔들림)
   - `CodexTokens.swift` 오늘 Codex 토큰: 세션별 `total_token_usage` 누적치(오늘 마지막 − 0시 이전 마지막). 첫 스캔은 오늘 수정된 파일 전체(수백 MB 가능), 이후 증분
   - `UsageEngine.swift` 위를 묶는 actor. `tick(claude:codex:)`로 서비스별 켜기/끄기(Claude를 끄면 키체인·API 접근 안 함)

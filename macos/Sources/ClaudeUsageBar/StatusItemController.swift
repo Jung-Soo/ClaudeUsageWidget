@@ -111,7 +111,8 @@ final class StatusItemController: NSObject {
         if store.settings.showClaude {
             let d = store.display
             let parts = d.rows.map { "\($0.name) \(Format.percent($0.percent))%" }
-            lines.append("Claude  " + (parts.isEmpty ? "데이터 없음" : parts.joined(separator: " · "))
+            let empty = d.status == .apiKeyOnly ? "API 키 사용 중(구독 한도 없음)" : "데이터 없음"
+            lines.append("Claude  " + (parts.isEmpty ? empty : parts.joined(separator: " · "))
                          + (d.source == .desktopHistory ? " (데스크톱 앱 기록)" : ""))
         }
         if store.settings.showCodex {

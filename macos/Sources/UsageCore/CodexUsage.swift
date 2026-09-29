@@ -27,10 +27,12 @@ public struct CodexSnapshot: Sendable, Equatable {
     public init(limits: [CodexLimit] = []) { self.limits = limits }
     public var observedAt: Date? { limits.map(\.observedAt).max() }
 
-    /// 여러 출처(파일 꼬리, 오늘 로그 전체, 저장해 둔 값)를 한도별 최신 기록으로 합친다. `horizon`보다 오래된 건 버린다.
-    public static func merged(_ sources: [[CodexLimit]], horizon: Date) -> CodexSnapshot {
+    /// 여러 출처(파일 꼬리, 오늘 로그 전체, 저장해 둔 값)를 한도별 최신 기록으로 합친다.
+    /// `horizon`보다 오래된 건 버리되, `keep`에 있는 한도(기본 Codex 한도)는 오래 안 써도 남긴다
+    /// (리셋이 지났으면 0% "리셋됨"으로 보인다).
+    public static func merged(_ sources: [[CodexLimit]], horizon: Date, keep: Set<String> = []) -> CodexSnapshot {
         var latest: [String: CodexLimit] = [:]
-        for l in sources.joined() where l.observedAt >= horizon {
+        for l in sources.joined() where l.observedAt >= horizon || keep.contains(l.id) {
             if let cur = latest[l.id], cur.observedAt >= l.observedAt { continue }
             latest[l.id] = l
         }
@@ -174,8 +176,10 @@ public enum CodexResolver {
             let prefix = l.id == "codex" ? "" : (l.name ?? l.id.replacingOccurrences(of: "codex_", with: "")) + " "
             for w in l.windows.sorted(by: { $0.minutes < $1.minutes }) {
                 let passed = w.resetsAt.map { $0 <= now } ?? false
-                rows.append(LimitRow(kind: .codex("\(l.id):\(w.minutes)"), name: prefix + windowName(w.minutes),
-                                     percent: passed ? 0 : w.percent, resetsAt: passed ? nil : w.resetsAt, isActive: false))
+                var row = LimitRow(kind: .codex("\(l.id):\(w.minutes)"), name: prefix + windowName(w.minutes),
+                                   percent: passed ? 0 : w.percent, resetsAt: passed ? nil : w.resetsAt, isActive: false)
+                if passed { row.percentInferred = true }   // 리셋이 지났으니 0%로 본다(다른 기기 사용분은 모름)
+                rows.append(row)
             }
         }
         guard !rows.isEmpty else { return nil }

@@ -27,13 +27,9 @@ struct PanelView: View {
             if let claude {
                 section(claude, primary: true, controls: true, now: now)
             }
-            if settings.showCodex {
+            if let codex {
                 if claude != nil { sectionBreak }
-                if let codex {
-                    section(codex, primary: claude == nil, controls: claude == nil, now: now)
-                } else {
-                    emptyCodex(controls: claude == nil)
-                }
+                section(codex, primary: claude == nil, controls: claude == nil, now: now)
             }
         }
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
@@ -57,39 +53,41 @@ struct PanelView: View {
         var stats: [(label: String, value: Text, help: String?)]
         /// 섹션 끝 상태 줄(문구, 경고색 여부)
         var note: (String, Bool)? = nil
+        /// 한도가 없을 때 도넛 대신 보여 줄 문구(API 키 사용, 최근 기록 없음). nil이면 빈 도넛.
+        var emptyText: String? = nil
     }
 
     private func claudeSection(now: Date) -> Section {
         let d = store.display
-        return Section(title: "Claude", plan: d.plan, dot: Palette.statusDot(d.status), rows: d.rows, active: d.active,
-                       stale: { d.isStale($0) },
-                       stats: [("크레딧", credit(d.credit), nil),
-                               ("오늘 토큰", Text(Format.tokens(store.tokens.total)), claudeTokenHelp)],
-                       note: FooterText.make(d, now: now))
+        let apiKey = d.status == .apiKeyOnly && d.rows.isEmpty
+        let tokens: (label: String, value: Text, help: String?) = ("오늘 토큰", Text(Format.tokens(store.tokens.total)), claudeTokenHelp)
+        return Section(title: "Claude", plan: apiKey ? "API 키" : d.plan, dot: Palette.statusDot(d.status), rows: d.rows,
+                       active: d.active, stale: { d.isStale($0) },
+                       stats: apiKey ? [tokens] : [("크레딧", credit(d.credit), nil), tokens],
+                       note: FooterText.make(d, now: now),
+                       emptyText: apiKey ? "API 키로 쓰는 중이라 5시간·주간 한도가 없어요" : nil)
     }
 
     private func codexSection(now: Date) -> Section? {
-        guard let c = store.codex else { return nil }
+        guard settings.showCodex else { return nil }
         var stats: [(label: String, value: Text, help: String?)] = []
-        if let cr = c.credits {
+        if let cr = store.codex?.credits {
             stats.append(("크레딧", Text(cr.unlimited ? "무제한" : cr.balance ?? "-"), nil))
         }
         if let t = store.codexTokens {
             stats.append(("오늘 토큰", Text(Format.tokens(t.total)),
                           "입력 \(Format.tokens(t.input)) (캐시 \(Format.tokens(t.cachedInput))) · 출력 \(Format.tokens(t.output)) · 세션 \(t.sessions)개"))
         }
+        guard let c = store.codex else {
+            // 한도 기록이 없어도 섹션은 보인다: API 키 사용자, 또는 아직 Codex를 안 쓴 경우
+            return Section(title: "Codex", plan: store.codexAPIKey ? "API 키" : nil, dot: nil, rows: [], active: nil,
+                           stale: { _ in false }, stats: stats,
+                           emptyText: store.codexAPIKey ? "API 키로 쓰는 중이라 구독 한도가 없어요" : "아직 Codex 한도 기록이 없어요")
+        }
         let ago = Format.ago(c.asOf, now: now)
         return Section(title: "Codex", plan: c.plan, dot: nil, rows: c.rows, active: c.active,
                        stale: { _ in c.isStale }, stats: stats,
                        note: c.isStale ? ("\(ago) 값 · Codex를 쓰면 갱신돼요", true) : ("\(ago) 사용", false))
-    }
-
-    private func emptyCodex(controls: Bool) -> some View {
-        VStack(spacing: 6) {
-            header(Section(title: "Codex", plan: nil, dot: nil, rows: [], active: nil, stale: { _ in false }, stats: []), controls: controls)
-            Text("최근 8일 안에 Codex를 쓴 기록이 없어요").font(.system(size: 12)).foregroundStyle(.secondary)
-                .padding(.vertical, controls ? 20 : 8)
-        }
     }
 
     // MARK: - 섹션 그리기
@@ -98,7 +96,10 @@ struct PanelView: View {
     private func section(_ s: Section, primary: Bool, controls: Bool, now: Date) -> some View {
         VStack(spacing: 0) {
             header(s, controls: controls)
-            if settings.compactPanel {
+            if s.rows.isEmpty, let empty = s.emptyText {
+                Text(empty).font(.system(size: 12)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).padding(.vertical, primary ? 20 : 10)
+            } else if settings.compactPanel {
                 VStack(spacing: 10) { ForEach(s.rows) { bar($0, stale: s.stale($0), now: now) } }
                     .padding(.top, 12).padding(.bottom, 12)
             } else {
@@ -115,7 +116,7 @@ struct PanelView: View {
                 }
             }
             // 두 번째 섹션(기본 모드)은 통계를 도넛 오른쪽에 붙였으므로 따로 줄을 두지 않는다
-            if !s.stats.isEmpty && (primary || settings.compactPanel) {
+            if !s.stats.isEmpty && (primary || settings.compactPanel || s.rows.isEmpty) {
                 Divider()
                 HStack(alignment: .top) {
                     ForEach(Array(s.stats.enumerated()), id: \.offset) { _, st in
@@ -158,15 +159,20 @@ struct PanelView: View {
         }
     }
 
+    /// 추정 표시: 5시간 창을 기록으로 추정했으면 "약", 리셋이 지나 0%로 본 값이면 "리셋됨(추정)".
     private func resetText(_ r: LimitRow, now: Date) -> String {
-        if settings.showAbsoluteReset, let at = Format.resetAt(r.resetsAt) { return "\(at) 리셋" }
-        if let left = Format.left(until: r.resetsAt, now: now) { return left == "곧" ? "곧 리셋" : "\(left) 후 리셋" }
+        if r.percentInferred == true { return "리셋됨(추정)" }
+        let approx = r.resetEstimated == true ? "약 " : ""
+        if settings.showAbsoluteReset, let at = Format.resetAt(r.resetsAt) { return "\(approx)\(at) 리셋" }
+        if let left = Format.left(until: r.resetsAt, now: now) { return left == "곧" ? "곧 리셋" : "\(approx)\(left) 후 리셋" }
         return r.kind.isCodex ? "리셋됨" : "리셋 시각 모름"
     }
 
     private func shortReset(_ r: LimitRow, now: Date) -> String {
-        if settings.showAbsoluteReset, let at = Format.resetAt(r.resetsAt, short: true) { return at }
-        return Format.left(until: r.resetsAt, now: now) ?? "-"
+        if r.percentInferred == true { return "리셋됨(추정)" }
+        let approx = r.resetEstimated == true ? "약 " : ""
+        if settings.showAbsoluteReset, let at = Format.resetAt(r.resetsAt, short: true) { return approx + at }
+        return Format.left(until: r.resetsAt, now: now).map { approx + $0 } ?? "-"
     }
 
     private func toggleReset() { settings.showAbsoluteReset.toggle() }
@@ -310,6 +316,8 @@ enum FooterText {
             return ("조회 실패(\(m))" + (ago.map { " · \($0) 값" } ?? ""), true)
         case .auth:
             return ("인증 실패 · 터미널에서 claude 다시 로그인", true)
+        case .apiKeyOnly where d.rows.isEmpty:
+            return ("API 키 사용 중 · 오늘 토큰만 집계해요", false)
         case .noCredential where d.source != .desktopHistory:
             return ("Claude Code CLI 로그인이 필요해요", true)
         case .tokenExpired where d.source != .desktopHistory:

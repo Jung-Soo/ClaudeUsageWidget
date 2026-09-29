@@ -9,6 +9,7 @@ final class UsageStore {
     private(set) var tokens = TokenTally()
     private(set) var codex: CodexDisplay?
     private(set) var codexTokens: CodexTokenTally?
+    private(set) var codexAPIKey = false
     /// 수동 갱신 표시. 겹친 틱이 먼저 끝나도 꺼지지 않도록 진행 중인 수동 갱신 수로 판단한다.
     private var forcedInFlight = 0
     private var ticking = 0
@@ -33,10 +34,16 @@ final class UsageStore {
     /// offline: 스냅샷 모드용. 실제 state.json의 복사본으로 시작하고, API를 부르지 않고, 알림 기록을 쓰지 않는다.
     static func live(settings: AppSettings, offline: Bool = false) -> UsageStore {
         let env = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let codexHome = env["CODEX_HOME"].map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".codex")
+        let claudeJSON = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0).appendingPathComponent(".claude.json") }
+            ?? home.appendingPathComponent(".claude.json")
         var stateURL = AppLog.dataDir.appendingPathComponent("state.json")
         if offline {
             let copy = FileManager.default.temporaryDirectory.appendingPathComponent("cub-snapshot-\(UUID().uuidString).json")
-            try? FileManager.default.copyItem(at: stateURL, to: copy)
+            // 검증용: CUB_STATE_FILE로 다른 상태 파일(예: 토큰 만료 상황을 흉내 낸 복사본)에서 시작할 수 있다
+            let source = env["CUB_STATE_FILE"].map { URL(fileURLWithPath: $0) } ?? stateURL
+            try? FileManager.default.copyItem(at: source, to: copy)
             stateURL = copy
         }
         let configDir = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
@@ -46,11 +53,11 @@ final class UsageStore {
             api: UsageAPIClient(),
             desktop: DesktopHistoryReader(),
             projectsRoot: configDir.appendingPathComponent("projects"),
-            codexSessionsRoot: (env["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
-                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex"))
-                .appendingPathComponent("sessions"),
+            codexSessionsRoot: codexHome.appendingPathComponent("sessions"),
             stateURL: stateURL,
             allowNetwork: !offline,
+            claudeAPIKeyHint: { AuthHints.claudeUsesAPIKey(claudeJSON: claudeJSON) },
+            codexAPIKeyHint: { AuthHints.codexUsesAPIKey(authJSON: codexHome.appendingPathComponent("auth.json")) },
             log: { if !offline { AppLog.write($0) } })
         return UsageStore(engine: engine, settings: settings,
                           alertURL: offline ? nil : AppLog.dataDir.appendingPathComponent("alerts.json"))
@@ -82,6 +89,7 @@ final class UsageStore {
         tokens = out.tokens
         codex = out.codex
         codexTokens = out.codexTokens
+        codexAPIKey = out.codexAPIKey
         evaluateAlerts()
         onChange?()
     }

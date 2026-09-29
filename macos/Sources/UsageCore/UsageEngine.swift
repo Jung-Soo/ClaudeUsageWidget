@@ -16,6 +16,8 @@ public struct EngineOutput: Sendable, Equatable {
     public var calledAPI: Bool
     public var codex: CodexDisplay?
     public var codexTokens: CodexTokenTally?
+    /// Codex를 API 키로 쓰는 중(구독 한도 없음).
+    public var codexAPIKey = false
 }
 
 public actor UsageEngine {
@@ -32,6 +34,8 @@ public actor UsageEngine {
     static let reliefThreshold: UInt64 = 32 << 20
     /// 끄면 사용량 API를 부르지 않는다(스냅샷 모드).
     private let allowNetwork: Bool
+    private let claudeAPIKeyHint: @Sendable () -> Bool
+    private let codexAPIKeyHint: @Sendable () -> Bool
     private let stateURL: URL?
     private let clock: @Sendable () -> Date
     private let log: @Sendable (String) -> Void
@@ -45,9 +49,13 @@ public actor UsageEngine {
                 stateURL: URL?,
                 calendar: Calendar = .current,
                 allowNetwork: Bool = true,
+                claudeAPIKeyHint: @escaping @Sendable () -> Bool = { false },
+                codexAPIKeyHint: @escaping @Sendable () -> Bool = { false },
                 clock: @escaping @Sendable () -> Date = { Date() },
                 log: @escaping @Sendable (String) -> Void = { _ in }) {
         self.allowNetwork = allowNetwork
+        self.claudeAPIKeyHint = claudeAPIKeyHint
+        self.codexAPIKeyHint = codexAPIKeyHint
         self.credentials = credentials
         self.api = api
         self.desktop = desktop
@@ -83,11 +91,12 @@ public actor UsageEngine {
         let later = clock()
         var display = DisplayState()
         if claude {
-            display = DisplayResolver.resolve(api: state.lastAPI, desktop: desktop.latest(), status: state.status,
+            display = DisplayResolver.resolve(api: state.lastAPI, desktopSamples: desktop.samples(), status: state.status,
                                               plan: state.plan, now: later, interval: interval)
         }
         var codexDisplay: CodexDisplay?
         var codexTokens: CodexTokenTally?
+        var codexAPIKey = false
         var bytesRead = claude ? scanner.lastBytesRead : 0
         if codex, let codexReader, let codexTokenScanner {
             if force || later.timeIntervalSince(codexReadAt) >= 30 {
@@ -98,15 +107,17 @@ public actor UsageEngine {
             bytesRead += codexTokenScanner.lastBytesRead
             let merged = CodexSnapshot.merged(
                 [codexSnapshot.limits, Array(codexTokenScanner.limits.values), state.codexLimits ?? []],
-                horizon: later.addingTimeInterval(-8 * 86400))
+                horizon: later.addingTimeInterval(-8 * 86400), keep: ["codex"])
             if Self.worthSaving(merged.limits, over: state.codexLimits ?? []) {
                 state.codexLimits = merged.limits
                 save()
             }
             codexDisplay = CodexResolver.resolve(merged, now: later)
+            codexAPIKey = codexDisplay == nil && codexAPIKeyHint()
         }
         if bytesRead >= Self.reliefThreshold { malloc_zone_pressure_relief(nil, 0) }
-        return EngineOutput(display: display, tokens: tokens, calledAPI: called, codex: codexDisplay, codexTokens: codexTokens)
+        return EngineOutput(display: display, tokens: tokens, calledAPI: called, codex: codexDisplay,
+                            codexTokens: codexTokens, codexAPIKey: codexAPIKey)
     }
 
     /// 한도 값(창·%·리셋)이 바뀌었거나 기록 시각이 10분 넘게 달라졌을 때만 저장한다(Codex 사용 중 매 틱 쓰기 방지).
@@ -130,7 +141,7 @@ public actor UsageEngine {
             return false
         }
         guard let cred else {
-            state.status = .noCredential
+            state.status = claudeAPIKeyHint() ? .apiKeyOnly : .noCredential
             state.policy.credentialUnavailable(now: now)
             return false
         }
