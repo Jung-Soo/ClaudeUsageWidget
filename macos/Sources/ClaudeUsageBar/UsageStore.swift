@@ -7,6 +7,7 @@ import UsageCore
 final class UsageStore {
     private(set) var display = DisplayState()
     private(set) var tokens = TokenTally()
+    private(set) var codex: CodexDisplay?
     private(set) var isRefreshing = false
     var onChange: (() -> Void)?
     var onAlerts: (([AlertEvent]) -> Void)?
@@ -34,6 +35,9 @@ final class UsageStore {
             api: UsageAPIClient(),
             desktop: DesktopHistoryReader(),
             projectsRoot: configDir.appendingPathComponent("projects"),
+            codexSessionsRoot: (env["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
+                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex"))
+                .appendingPathComponent("sessions"),
             stateURL: AppLog.dataDir.appendingPathComponent("state.json"),
             log: { AppLog.write($0) })
         return UsageStore(engine: engine, settings: settings, alertURL: AppLog.dataDir.appendingPathComponent("alerts.json"))
@@ -55,6 +59,7 @@ final class UsageStore {
         let out = await engine.tick(force: force, interval: settings.interval)
         display = out.display
         tokens = out.tokens
+        codex = out.codex
         isRefreshing = false
         evaluateAlerts()
         onChange?()
@@ -62,7 +67,16 @@ final class UsageStore {
 
     private func evaluateAlerts() {
         let before = alertState
-        let events = alertState.evaluate(display, now: Date(), settings: settings.alerts)
+        var events = alertState.evaluate(display, now: Date(), settings: settings.alerts)
+        if settings.showCodex, let c = codex {
+            // 같은 규칙으로 평가하되, 알림 제목에 "Codex"를 붙이고 멈춘 값이면 건너뛴다
+            var d = DisplayState()
+            d.rows = c.rows.map { var r = $0; r.name = "Codex " + r.name; return r }
+            d.asOf = c.asOf
+            d.source = .api
+            if c.isStale { d.staleRowIDs = Set(d.rows.map(\.id)) }
+            events += alertState.evaluate(d, now: Date(), settings: settings.alerts)
+        }
         if alertState != before, let alertURL, let data = try? JSONEncoder().encode(alertState) {
             try? data.write(to: alertURL, options: .atomic)
         }

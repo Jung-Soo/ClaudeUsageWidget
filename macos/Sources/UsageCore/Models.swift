@@ -1,10 +1,12 @@
 import Foundation
 
-/// 한도 종류. 색 규칙(5시간 코랄 / 주간 보라 / 모델별 청록)이 이 값을 따른다.
+/// 한도 종류. 색 규칙(5시간 코랄 / 주간 보라 / 모델별 청록 / Codex 파랑)이 이 값을 따른다.
 public enum LimitKind: Sendable, Equatable, Codable {
     case session
     case weekly
     case model(String)
+    /// Codex 한도 창. 값은 "limit_id:창 길이(분)".
+    case codex(String)
 }
 
 public struct LimitRow: Sendable, Equatable, Codable, Identifiable {
@@ -21,6 +23,7 @@ public struct LimitRow: Sendable, Equatable, Codable, Identifiable {
         case .session: id = "session"
         case .weekly: id = "weekly"
         case .model(let m): id = "model:\(m)"
+        case .codex(let c): id = "codex:\(c)"
         }
         self.kind = kind
         self.name = name

@@ -11,6 +11,9 @@ public final class SessionLogScanner {
     private var offsets: [String: UInt64] = [:]
     private var seen = Set<String>()
     private var tally = TokenTally()
+    /// 폴더 전체 탐색은 60초에 한 번. 그 사이에는 오늘 수정된 파일 목록만 다시 확인한다.
+    private var candidates: [URL] = []
+    private var enumeratedAt = Date.distantPast
     private let iso = ISO8601DateFormatter()
     private static let marker = Data(#""type":"assistant""#.utf8)
     private static let chunk = 4 << 20
@@ -29,14 +32,25 @@ public final class SessionLogScanner {
             offsets = [:]
             seen = []
             tally = TokenTally()
+            enumeratedAt = .distantPast
         }
 
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
-        guard let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys) else { return tally }
-        for case let url as URL in en where url.pathExtension == "jsonl" {
-            guard let v = try? url.resourceValues(forKeys: Set(keys)), v.isRegularFile == true,
-                  let mod = v.contentModificationDate, mod >= start,
-                  let size = v.fileSize.map(UInt64.init) else { continue }
+        if now.timeIntervalSince(enumeratedAt) >= 60 || now < enumeratedAt {
+            enumeratedAt = now
+            candidates = []
+            if let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys) {
+                for case let url as URL in en where url.pathExtension == "jsonl" {
+                    if let mod = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+                       mod >= start { candidates.append(url) }
+                }
+            }
+        }
+        for url in candidates {
+            // URL은 리소스 값을 캐시하므로 크기는 매번 stat으로 읽는다
+            var st = stat()
+            guard stat(url.path, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { continue }
+            let size = UInt64(st.st_size)
             var pos = offsets[url.path] ?? 0
             if size < pos { pos = 0 }            // 파일이 새로 써졌음. 중복 제거 집합이 이중 집계를 막는다
             if size == pos { continue }

@@ -1,6 +1,6 @@
 # Claude Usage Bar 사용 가이드
 
-Claude Code 구독 플랜 사용량을 맥 메뉴바에 보여 주는 앱입니다. 5시간·주간·모델별 한도를 도넛으로 보여 주고, 한도에 가까워지면 알림을 보냅니다.
+Claude Code 구독 플랜 사용량을 맥 메뉴바에 보여 주는 앱입니다. 5시간·주간·모델별 한도를 도넛으로 보여 주고, 한도에 가까워지면 알림을 보냅니다. Codex CLI를 쓰면 Codex 사용량도 함께 보여 줍니다.
 
 <img src="images/menubar-light.png" width="220"> <img src="images/panel-light.png" width="240">
 
@@ -68,6 +68,16 @@ ditto -c -k --keepParent ~/Applications/ClaudeUsageBar.app ClaudeUsageBar.zip
 - 마우스를 올리면 각 숫자의 이름이 툴팁으로 보입니다
 - 메뉴바 공간이 부족해 노치 뒤로 숨겨지면 `◔ 26%`로 자동으로 줄어듭니다
 
+### Codex 항목
+
+Codex CLI를 최근 8일 안에 썼으면 Claude 항목 왼쪽에 `◔ 45`처럼 Codex 항목이 따로 생깁니다.
+
+- 도넛·숫자: Codex 한도 중 가장 높은 사용률
+- 값은 Codex를 쓸 때마다 CLI가 로그에 남긴 것을 읽습니다. 로그인·네트워크가 필요 없습니다
+- 6시간 넘게 안 쓰면 회색이 되고 패널에 "Codex N시간 전 값"으로 표시됩니다. Codex를 다시 쓰면 갱신됩니다
+- 다른 기기(다른 맥, 웹)에서 쓴 Codex 사용량은 이 맥의 로그에 없어서 반영되지 않습니다
+- 필요 없으면 설정 → "Codex 사용량도 표시"를 끄세요
+
 ### 패널 (도넛 클릭)
 
 - **큰 도넛**: 지금 걸린 한도와 리셋까지 남은 시간
@@ -81,7 +91,8 @@ ditto -c -k --keepParent ~/Applications/ClaudeUsageBar.app ClaudeUsageBar.zip
 
 | 색 | 의미 |
 |---|---|
-| 코랄 / 보라 / 청록 | 5시간 / 주간 / 모델별 주간 (평상시) |
+| 코랄 / 보라 / 청록 | Claude 5시간 / 주간 / 모델별 주간 (평상시) |
+| 파랑 | Codex (모든 한도) |
 | 주황 | 70% 이상 |
 | 빨강 | 90% 이상 |
 | 회색 | 최신 값이 아님(조회 실패·대기 중) |
@@ -98,6 +109,7 @@ ditto -c -k --keepParent ~/Applications/ClaudeUsageBar.app ClaudeUsageBar.zip
 |---|---|
 | 한도 조회 주기 | 2 / 3 / 5 / 10분(기본 3분). 너무 짧으면 호출 제한(429)에 걸립니다 |
 | 메뉴바 표시 | ① 도넛만 / ② 도넛 + 숫자 / ③ 미니 도넛 3개 / ④ 도넛 + 숫자 3개(기본) |
+| Codex 사용량도 표시 | Codex 메뉴바 항목과 패널 섹션 켜기/끄기(기본 켜짐) |
 | 로그인 시 자동 실행 | 맥을 켤 때 자동으로 실행 |
 | 알림 | 경고·위험 기준치(80·95 / 85·95 / 90·98), 사용 속도 예측, 추가 크레딧 사용 알림 |
 | 알림 테스트 | 처음 누르면 macOS가 알림 허용을 묻습니다. 허용해야 알림이 옵니다 |
@@ -143,6 +155,7 @@ Claude Code는 저장소의 `CLAUDE.md`를 읽고 작업합니다. 토큰 값을
 | 키체인 `Claude Code-credentials` (`/usr/bin/security`로 읽기 전용) | 사용량 조회용 토큰 |
 | `~/.claude/projects/**/*.jsonl` | 오늘 토큰 집계 |
 | `~/Library/Application Support/Claude/plan-usage-history.json` | 토큰 만료 시 대체 표시 |
+| `~/.codex/sessions/**/rollout-*.jsonl` (최근 파일의 끝부분만) | Codex 한도 |
 
 - 네트워크 요청은 `https://api.anthropic.com/api/oauth/usage` **하나**뿐입니다(기본 3분에 한 번)
 - 토큰은 디스크·로그에 남기지 않고, 키체인에 쓰지도 않습니다

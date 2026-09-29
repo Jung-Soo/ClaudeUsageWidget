@@ -19,6 +19,7 @@ struct SettingsView: View {
                 Picker("메뉴바 표시", selection: $settings.menubarStyle) {
                     ForEach(MenubarStyle.allCases) { Text($0.label).tag($0) }
                 }
+                Toggle("Codex 사용량도 표시", isOn: $settings.showCodex)
                 Toggle("로그인 시 자동 실행", isOn: Binding(get: { loginOn }, set: { on in
                     loginError = settings.setLaunchAtLogin(on)
                     loginOn = settings.launchAtLogin

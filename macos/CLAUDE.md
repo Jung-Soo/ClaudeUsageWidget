@@ -1,6 +1,6 @@
 # Claude Usage Bar (macOS) — Claude Code 작업 안내
 
-Claude Code 구독 플랜 사용량(5시간 / 주간 / 모델별 주간 한도, 추가 크레딧, 오늘 토큰)을 메뉴바에 보여 주는 macOS 앱.
+Claude Code 구독 플랜 사용량(5시간 / 주간 / 모델별 주간 한도, 추가 크레딧, 오늘 토큰)과 Codex CLI 한도를 메뉴바에 보여 주는 macOS 앱.
 사용자 가이드는 `docs/GUIDE.md`, 사용자에게 설명할 때는 그 문서의 표현을 따른다.
 
 ## 명령
@@ -24,7 +24,8 @@ swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이
   - `DesktopHistory.swift` Claude 데스크톱 앱 기록 `~/Library/Application Support/Claude/plan-usage-history.json`(version 2만)
   - `DisplayResolver.swift` API 값(신선하면) → 데스크톱 기록(토큰 만료 시) → 오래된 API 값(회색) 순으로 표시 결정
   - `SessionLogScanner.swift` `~/.claude/projects/**/*.jsonl` 오늘 토큰 증분 집계, `message.id|requestId` 중복 제거
-  - `AlertEngine.swift` 경고/위험/100%/속도 예측/크레딧 알림 규칙
+  - `CodexUsage.swift` `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`(또는 `CODEX_HOME`)에서 `token_count` 이벤트의 `rate_limits`를 한도(`limit_id`)별로 마지막 값만 읽음. 세션 로그가 수 GB라 최근 30일 폴더·8일 안에 수정된 파일의 끝부분만 읽고, 수정 시각이 같으면 다시 읽지 않는다
+  - `AlertEngine.swift` 경고/위험/100%/속도 예측/크레딧 알림 규칙(Codex 한도에도 같은 규칙, 제목에 "Codex")
   - `UsageEngine.swift` 위를 묶는 actor
 - `Sources/ClaudeUsageBar/` — AppKit 상태 항목 + SwiftUI 패널·설정, 알림, 스냅샷 모드
 - `Tests/UsageCoreTests/Fixtures/` — API 응답·데스크톱 기록·세션 로그 샘플
@@ -34,7 +35,7 @@ swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이
 - **토큰은 읽기만 한다.** 앱이 refresh token으로 갱신하거나 키체인에 다시 쓰지 않는다(Claude Code 로그인이 풀릴 수 있음). 만료되면 사용자가 터미널에서 `claude`를 실행하면 CLI가 스스로 갱신한다
 - 토큰 값을 출력·로그·커밋에 남기지 않는다. 디버깅할 때도 `security ... -w` 결과를 그대로 출력하지 말고 구조만 확인한다(`Redact.secrets` 참고)
 - 사용량 API는 2분보다 자주 호출하지 않는다(429 유발)
-- 색은 그래프(도넛)에만 쓴다: 5시간 코랄 `#D85A30`, 주간 보라 `#7F77DD`, 모델별 청록 `#1D9E75`, 70%+ 주황, 90%+ 빨강, 최신 아님 회색
+- 색은 그래프(도넛)에만 쓴다: 5시간 코랄 `#D85A30`, 주간 보라 `#7F77DD`, 모델별 청록 `#1D9E75`, Codex 전체 파랑 `#378ADD`, 70%+ 주황, 90%+ 빨강, 최신 아님 회색
 
 ## 문제 진단 순서
 

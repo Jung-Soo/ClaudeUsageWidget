@@ -28,6 +28,20 @@ enum Snapshot {
                 }
             }
             save(items.padding(10).background(bg).environment(\.colorScheme, scheme), dir.appendingPathComponent("menubar-\(name).png"))
+            if let c = store.codex {
+                let pair = HStack(spacing: 14) {
+                    HStack(spacing: 4) {
+                        StatusItemController.codexImageView(c)
+                        Text(StatusItemController.codexTitle(c, style: .donutNumbers)).font(.system(size: 13).monospacedDigit())
+                    }
+                    HStack(spacing: 4) {
+                        StatusItemController.imageView(store.display, style: .donutNumbers)
+                        Text(StatusItemController.titleText(store.display, style: .donutNumbers)).font(.system(size: 13).monospacedDigit())
+                    }
+                }
+                .frame(height: 24)
+                save(pair.padding(8).background(bg).environment(\.colorScheme, scheme), dir.appendingPathComponent("menubar-codex-\(name).png"))
+            }
         }
         for scheme in [NSAppearance.Name.aqua, .darkAqua] {
             saveViaWindow(SettingsView(settings: settings, onTestAlert: {}), appearance: scheme,

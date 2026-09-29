@@ -12,6 +12,7 @@ public struct EngineOutput: Sendable, Equatable {
     public var display: DisplayState
     public var tokens: TokenTally
     public var calledAPI: Bool
+    public var codex: CodexDisplay?
 }
 
 public actor UsageEngine {
@@ -19,6 +20,10 @@ public actor UsageEngine {
     private let api: any UsageFetching
     private let desktop: any DesktopHistoryReading
     private let scanner: SessionLogScanner
+    private let codexReader: CodexLogReader?
+    /// Codex 값은 Codex를 쓸 때만 바뀌므로 30초에 한 번만 읽는다.
+    private var codexSnapshot = CodexSnapshot()
+    private var codexReadAt = Date.distantPast
     private let stateURL: URL?
     private let clock: @Sendable () -> Date
     private let log: @Sendable (String) -> Void
@@ -28,6 +33,7 @@ public actor UsageEngine {
                 api: any UsageFetching,
                 desktop: any DesktopHistoryReading,
                 projectsRoot: URL,
+                codexSessionsRoot: URL? = nil,
                 stateURL: URL?,
                 calendar: Calendar = .current,
                 clock: @escaping @Sendable () -> Date = { Date() },
@@ -36,6 +42,7 @@ public actor UsageEngine {
         self.api = api
         self.desktop = desktop
         self.scanner = SessionLogScanner(root: projectsRoot, calendar: calendar)
+        self.codexReader = codexSessionsRoot.map { CodexLogReader(root: $0, calendar: calendar) }
         self.stateURL = stateURL
         self.clock = clock
         self.log = log
@@ -58,9 +65,15 @@ public actor UsageEngine {
             save()
         }
 
+        let later = clock()
         let display = DisplayResolver.resolve(api: state.lastAPI, desktop: desktop.latest(), status: state.status,
-                                              plan: state.plan, now: clock(), interval: interval)
-        return EngineOutput(display: display, tokens: tokens, calledAPI: called)
+                                              plan: state.plan, now: later, interval: interval)
+        if let codexReader, force || later.timeIntervalSince(codexReadAt) >= 30 {
+            codexSnapshot = codexReader.read(now: later)
+            codexReadAt = later
+        }
+        let codex = CodexResolver.resolve(codexSnapshot, now: later)
+        return EngineOutput(display: display, tokens: tokens, calledAPI: called, codex: codex)
     }
 
     /// 실제로 네트워크 호출을 했으면 true.

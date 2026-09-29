@@ -27,6 +27,8 @@ final class AppSettings {
 
     var interval: TimeInterval { didSet { defaults.set(interval, forKey: "apiInterval") } }
     var menubarStyle: MenubarStyle { didSet { defaults.set(menubarStyle.rawValue, forKey: "menubarStyle") } }
+    /// Codex 사용량(메뉴바 항목 + 패널 섹션). Codex 기록이 없으면 켜 있어도 안 보인다.
+    var showCodex: Bool { didSet { defaults.set(showCodex, forKey: "showCodex") } }
     var alerts: AlertSettings {
         didSet { if let d = try? JSONEncoder().encode(alerts) { defaults.set(d, forKey: "alerts") } }
     }
@@ -36,6 +38,7 @@ final class AppSettings {
         let i = defaults.double(forKey: "apiInterval")
         interval = FetchPolicy.clamp(i > 0 ? i : 180)
         menubarStyle = MenubarStyle(rawValue: defaults.integer(forKey: "menubarStyle")) ?? .donutNumbers
+        showCodex = defaults.object(forKey: "showCodex") as? Bool ?? true
         alerts = defaults.data(forKey: "alerts").flatMap { try? JSONDecoder().decode(AlertSettings.self, from: $0) } ?? AlertSettings()
     }
 
