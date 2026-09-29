@@ -9,7 +9,10 @@ final class UsageStore {
     private(set) var tokens = TokenTally()
     private(set) var codex: CodexDisplay?
     private(set) var codexTokens: CodexTokenTally?
-    private(set) var isRefreshing = false
+    /// 수동 갱신 표시. 겹친 틱이 먼저 끝나도 꺼지지 않도록 진행 중인 수동 갱신 수로 판단한다.
+    private var forcedInFlight = 0
+    private var ticking = 0
+    var isRefreshing: Bool { forcedInFlight > 0 }
     var onChange: (() -> Void)?
     var onAlerts: (([AlertEvent]) -> Void)?
 
@@ -27,8 +30,15 @@ final class UsageStore {
             .flatMap { try? JSONDecoder().decode(AlertState.self, from: $0) } ?? AlertState()
     }
 
-    static func live(settings: AppSettings) -> UsageStore {
+    /// offline: 스냅샷 모드용. 실제 state.json의 복사본으로 시작하고, API를 부르지 않고, 알림 기록을 쓰지 않는다.
+    static func live(settings: AppSettings, offline: Bool = false) -> UsageStore {
         let env = ProcessInfo.processInfo.environment
+        var stateURL = AppLog.dataDir.appendingPathComponent("state.json")
+        if offline {
+            let copy = FileManager.default.temporaryDirectory.appendingPathComponent("cub-snapshot-\(UUID().uuidString).json")
+            try? FileManager.default.copyItem(at: stateURL, to: copy)
+            stateURL = copy
+        }
         let configDir = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
         let engine = UsageEngine(
@@ -39,9 +49,11 @@ final class UsageStore {
             codexSessionsRoot: (env["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
                 ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex"))
                 .appendingPathComponent("sessions"),
-            stateURL: AppLog.dataDir.appendingPathComponent("state.json"),
-            log: { AppLog.write($0) })
-        return UsageStore(engine: engine, settings: settings, alertURL: AppLog.dataDir.appendingPathComponent("alerts.json"))
+            stateURL: stateURL,
+            allowNetwork: !offline,
+            log: { if !offline { AppLog.write($0) } })
+        return UsageStore(engine: engine, settings: settings,
+                          alertURL: offline ? nil : AppLog.dataDir.appendingPathComponent("alerts.json"))
     }
 
     /// 10초마다: 로컬 토큰 집계 + (주기가 됐으면) API.
@@ -55,15 +67,21 @@ final class UsageStore {
         }
     }
 
+    /// 수동 갱신이 아니면, 이미 진행 중인 틱이 있을 때 건너뛴다(주기 틱·패널 열기·설정 변경이 겹치는 경우).
     func refresh(force: Bool) async {
-        if force { isRefreshing = true }
+        if !force && ticking > 0 { return }
+        ticking += 1
+        if force { forcedInFlight += 1 }
+        defer {
+            ticking -= 1
+            if force { forcedInFlight -= 1 }
+        }
         let out = await engine.tick(force: force, interval: settings.interval,
                                     claude: settings.showClaude, codex: settings.showCodex)
         display = out.display
         tokens = out.tokens
         codex = out.codex
         codexTokens = out.codexTokens
-        isRefreshing = false
         evaluateAlerts()
         onChange?()
     }

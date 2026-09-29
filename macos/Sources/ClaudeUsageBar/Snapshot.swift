@@ -10,7 +10,7 @@ enum Snapshot {
         let settings = AppSettings(defaults: UserDefaults(suiteName: "snapshot-\(UUID().uuidString)")!)
         settings.showClaude = true
         settings.showCodex = true
-        let store = UsageStore.live(settings: settings)
+        let store = UsageStore.live(settings: settings, offline: true)   // 실행 중인 앱과 상태 파일·API를 공유하지 않는다
         await store.refresh(force: false)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for scheme in [ColorScheme.light, .dark] {

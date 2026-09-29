@@ -14,6 +14,8 @@ public final class SessionLogScanner {
     /// 폴더 전체 탐색은 60초에 한 번. 그 사이에는 오늘 수정된 파일 목록만 다시 확인한다.
     private var candidates: [URL] = []
     private var enumeratedAt = Date.distantPast
+    /// 직전 scan에서 읽은 바이트 수(큰 첫 스캔 뒤 메모리 반환 판단용).
+    public private(set) var lastBytesRead: UInt64 = 0
     private let iso = ISO8601DateFormatter()
     private static let marker = Data(#""type":"assistant""#.utf8)
     private static let chunk = 4 << 20
@@ -25,6 +27,7 @@ public final class SessionLogScanner {
     }
 
     public func scan(now: Date) -> TokenTally {
+        lastBytesRead = 0
         let start = calendar.startOfDay(for: now)
         guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return tally }
         if day != start {
@@ -35,11 +38,10 @@ public final class SessionLogScanner {
             enumeratedAt = .distantPast
         }
 
-        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         if now.timeIntervalSince(enumeratedAt) >= 60 || now < enumeratedAt {
             enumeratedAt = now
             candidates = []
-            if let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys) {
+            if let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey]) {
                 for case let url as URL in en where url.pathExtension == "jsonl" {
                     if let mod = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
                        mod >= start { candidates.append(url) }
@@ -54,7 +56,9 @@ public final class SessionLogScanner {
             var pos = offsets[url.path] ?? 0
             if size < pos { pos = 0 }            // 파일이 새로 써졌음. 중복 제거 집합이 이중 집계를 막는다
             if size == pos { continue }
-            offsets[url.path] = read(url, from: pos, start: start, end: end)
+            let consumed = read(url, from: pos, start: start, end: end)
+            lastBytesRead += consumed - pos
+            offsets[url.path] = consumed
         }
         return tally
     }

@@ -170,3 +170,55 @@ import Testing
         #expect(out.codex == nil)
     }
 }
+
+@Suite struct CodexMergeTests {
+    let now = date("2026-09-29T03:00:00Z")
+    let helper = CodexTests()
+
+    func engine(root: URL, stateURL: URL, api: StubAPI? = nil, allowNetwork: Bool = true) -> UsageEngine {
+        UsageEngine(credentials: StubCredentials(cred: OAuthCredential(accessToken: "x", expiresAt: now + 3600)),
+                    api: api ?? StubAPI(.failure(.network("off"))), desktop: StubDesktop(list: []),
+                    projectsRoot: root.appendingPathComponent("none"), codexSessionsRoot: root,
+                    stateURL: stateURL, calendar: seoul, allowNetwork: allowNetwork, clock: { [now] in now })
+    }
+
+    /// 같은 세션에서 앞서 쓴 모델의 한도가 파일 꼬리에 없어도 보인다(오늘 로그 전체 스캔 + 저장).
+    @Test func earlierLimitInSameFileIsKeptAndPersisted() async throws {
+        let week = now.timeIntervalSince1970 + 3 * 86400
+        let filler = #"{"timestamp":"2026-09-29T01:00:00.000Z","type":"response_item","payload":{"type":"message","text":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}"#
+        var lines = [helper.line("2026-09-29T00:30:00.000Z", id: "codex_bengalfox", name: "Spark", primary: (20, 10080, week))]
+        lines += Array(repeating: filler, count: 3000)                     // 약 400KB: 256KB 꼬리 밖으로 밀어냄
+        lines.append(helper.line("2026-09-29T02:00:00.000Z", id: "codex", primary: (45, 10080, week)))
+        let root = try helper.root(["2026/09/29/rollout-a.jsonl": lines])
+        let stateURL = FileManager.default.temporaryDirectory.appendingPathComponent("st-\(UUID().uuidString).json")
+
+        let out = await engine(root: root, stateURL: stateURL).tick(force: false, interval: 180, claude: false, codex: true)
+        #expect(out.codex?.rows.map(\.name) == ["주간", "Spark 주간"])
+
+        // 파일이 없어진 뒤 다시 켜도 저장해 둔 한도가 남는다
+        let empty = try helper.root(["2026/09/29/rollout-b.jsonl": [helper.line("2026-09-29T02:10:00.000Z", id: "codex", primary: (46, 10080, week))]])
+        let again = await engine(root: empty, stateURL: stateURL).tick(force: false, interval: 180, claude: false, codex: true)
+        #expect(again.codex?.rows.map(\.name) == ["주간", "Spark 주간"])
+        #expect(again.codex?.rows.first?.percent == 46)
+    }
+
+    @Test func offlineEngineNeverCallsAPI() async throws {
+        let api = StubAPI(.success(UsageSnapshot(fiveHour: nil, weekly: nil, models: [], credit: nil, fetchedAt: now)))
+        let root = try helper.root([:])
+        let stateURL = FileManager.default.temporaryDirectory.appendingPathComponent("st-\(UUID().uuidString).json")
+        _ = await engine(root: root, stateURL: stateURL, api: api, allowNetwork: false).tick(force: true, interval: 180)
+        #expect(api.calls == 0)
+    }
+
+    @Test func savesOnlyOnMeaningfulChange() {
+        let w = [CodexLimit.Window(minutes: 10080, percent: 45, resetsAt: nil)]
+        let a = CodexLimit(id: "codex", name: nil, plan: "pro", windows: w, observedAt: now)
+        var b = a; b.observedAt = now + 60
+        var c = a; c.observedAt = now + 700
+        var d = a; d.windows = [CodexLimit.Window(minutes: 10080, percent: 46, resetsAt: nil)]
+        #expect(!UsageEngine.worthSaving([b], over: [a]))
+        #expect(UsageEngine.worthSaving([c], over: [a]))
+        #expect(UsageEngine.worthSaving([d], over: [a]))
+        #expect(UsageEngine.worthSaving([a], over: []))
+    }
+}

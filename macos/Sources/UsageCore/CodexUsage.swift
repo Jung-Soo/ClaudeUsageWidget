@@ -1,8 +1,8 @@
 import Foundation
 
 /// Codex CLI가 세션 로그(`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`)의 `token_count` 이벤트에 남기는 한도 기록 하나.
-public struct CodexLimit: Sendable, Equatable {
-    public struct Window: Sendable, Equatable {
+public struct CodexLimit: Sendable, Equatable, Codable {
+    public struct Window: Sendable, Equatable, Codable {
         public var minutes: Int
         public var percent: Double
         public var resetsAt: Date?
@@ -16,7 +16,7 @@ public struct CodexLimit: Sendable, Equatable {
     public var credits: CodexCredits? = nil
 }
 
-public struct CodexCredits: Sendable, Equatable {
+public struct CodexCredits: Sendable, Equatable, Codable {
     public var hasCredits: Bool
     public var unlimited: Bool
     public var balance: String?
@@ -26,9 +26,23 @@ public struct CodexSnapshot: Sendable, Equatable {
     public var limits: [CodexLimit] = []
     public init(limits: [CodexLimit] = []) { self.limits = limits }
     public var observedAt: Date? { limits.map(\.observedAt).max() }
+
+    /// 여러 출처(파일 꼬리, 오늘 로그 전체, 저장해 둔 값)를 한도별 최신 기록으로 합친다. `horizon`보다 오래된 건 버린다.
+    public static func merged(_ sources: [[CodexLimit]], horizon: Date) -> CodexSnapshot {
+        var latest: [String: CodexLimit] = [:]
+        for l in sources.joined() where l.observedAt >= horizon {
+            if let cur = latest[l.id], cur.observedAt >= l.observedAt { continue }
+            latest[l.id] = l
+        }
+        return CodexSnapshot(limits: latest.values.sorted { a, b in
+            a.id == "codex" ? true : b.id == "codex" ? false : a.id < b.id
+        })
+    }
 }
 
 /// 최근 세션 파일의 끝부분만 읽어 한도별 마지막 기록을 모은다. 세션 로그는 수 GB가 될 수 있어 전체를 훑지 않는다.
+/// 꼬리에 없는 한도(같은 세션에서 앞서 쓴 모델 등)는 오늘 로그 전체를 읽는 `CodexTokenScanner`와
+/// 저장해 둔 값으로 보완한다(`UsageEngine`에서 `CodexSnapshot.merged`).
 /// - 최근 `lookbackDays`일 날짜 폴더만 보고, 그중 `freshDays`일 안에 수정된 파일만 읽는다
 /// - 파일 수정 시각이 그대로면 다시 읽지 않는다
 public final class CodexLogReader {
@@ -108,8 +122,13 @@ public final class CodexLogReader {
     }
 
     static func parse(_ line: Data) -> CodexLimit? {
-        guard let j = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              let p = j["payload"] as? [String: Any], p["type"] as? String == "token_count",
+        guard let j = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return nil }
+        return parse(json: j)
+    }
+
+    /// 이미 디코딩한 token_count 줄에서 한도 기록을 꺼낸다(오늘 토큰 스캐너와 같이 쓴다).
+    static func parse(json j: [String: Any]) -> CodexLimit? {
+        guard let p = j["payload"] as? [String: Any], p["type"] as? String == "token_count",
               let rl = p["rate_limits"] as? [String: Any],
               let id = rl["limit_id"] as? String,
               let ts = ISODate.parse(j["timestamp"] as? String) else { return nil }

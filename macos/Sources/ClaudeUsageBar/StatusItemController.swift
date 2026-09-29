@@ -4,7 +4,7 @@ import UsageCore
 
 /// 메뉴바 항목 하나. 켜진 서비스마다 [도넛 + 숫자] 조각을 이어 붙인다: `◔ 13 · 27 · 11  ◔ 45`
 /// - Claude 조각은 설정의 형식(①~④)을 따르고, Codex 조각은 도넛 + 가장 높은 %(①·③이면 도넛만)
-/// - ③·④가 노치 뒤로 가려지면 Claude 조각을 ②로 줄이고, 10분마다·화면 구성이 바뀔 때 다시 넓혀 본다
+/// - 노치 뒤로 가려지면 한 단계 줄이고(③·④ → ②, ② → ①: 숫자 없이 도넛만), 10분마다·화면 구성이 바뀔 때 다시 넓혀 본다
 /// - 도넛은 텍스트 안의 이미지 첨부로 넣어서, 글자색은 메뉴바 밝기에 맞춰 시스템이 정한다
 @MainActor
 final class StatusItemController: NSObject {
@@ -17,6 +17,8 @@ final class StatusItemController: NSObject {
     private var hasBeenVisible = false
     private var lastExpandTry = Date.distantPast
     private var observers: [NSObjectProtocol] = []
+    /// 마지막으로 그린 내용. 같으면 다시 그리지 않는다(10초마다 호출됨).
+    private var lastSignature = ""
 
     init(store: UsageStore, openSettings: @escaping () -> Void) {
         self.store = store
@@ -53,13 +55,34 @@ final class StatusItemController: NSObject {
 
     var effectiveStyle: MenubarStyle {
         let s = store.settings.menubarStyle
-        return compact && s.rawValue >= MenubarStyle.threeDonuts.rawValue ? .donutActive : s
+        guard compact else { return s }
+        return s.rawValue >= MenubarStyle.threeDonuts.rawValue ? .donutActive : .donut
+    }
+
+    /// 메뉴바에 보이는 값만 모은 문자열(%, 색을 정하는 상태, 형식, 서비스). 바뀌었을 때만 다시 그린다.
+    private func signature(style: MenubarStyle) -> String {
+        var parts = ["\(style.rawValue)", "\(store.settings.showClaude)", "\(store.settings.showCodex)",
+                     "\(NSScreen.main?.backingScaleFactor ?? 2)"]
+        if store.settings.showClaude {
+            let d = store.display
+            parts += d.rows.map { "\($0.id)=\(Format.percent($0.percent)):\(d.isStale($0))" } + ["a=\(d.active?.id ?? "")"]
+        }
+        if store.settings.showCodex, let c = store.codex {
+            parts += c.rows.map { "\($0.id)=\(Format.percent($0.percent))" } + ["cs=\(c.isStale)"]
+        }
+        return parts.joined(separator: "|")
     }
 
     func render() {
         guard let b = item.button else { return }
+        b.toolTip = tooltip()
+        if compact, Date().timeIntervalSince(lastExpandTry) > 600 { tryExpand(); return }
+        let style = effectiveStyle
+        let sig = signature(style: style)
+        guard sig != lastSignature else { return }
+        lastSignature = sig
         let scale = NSScreen.main?.backingScaleFactor ?? 2
-        let segs = Self.segments(store, style: effectiveStyle)
+        let segs = Self.segments(store, style: style)
         let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
         let out = NSMutableAttributedString()
         for (i, seg) in segs.enumerated() {
@@ -74,9 +97,6 @@ final class StatusItemController: NSObject {
         }
         b.image = nil
         b.attributedTitle = out
-        b.toolTip = tooltip()
-
-        if compact, Date().timeIntervalSince(lastExpandTry) > 600 { tryExpand() }
     }
 
     func showPanel() {
@@ -176,7 +196,7 @@ final class StatusItemController: NSObject {
         guard let w = item.button?.window else { return }
         let visible = w.occlusionState.contains(.visible)
         if visible { hasBeenVisible = true; return }
-        guard hasBeenVisible, !compact, store.settings.menubarStyle.rawValue >= MenubarStyle.threeDonuts.rawValue else { return }
+        guard hasBeenVisible, !compact, store.settings.menubarStyle != .donut else { return }
         compact = true
         AppLog.write("[menubar] status item hidden (notch?) → compact")
         render()

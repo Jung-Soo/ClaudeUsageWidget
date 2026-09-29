@@ -35,6 +35,10 @@ public final class CodexTokenScanner {
     private var files: [String: FileState] = [:]
     private var candidates: [String] = []
     private var enumeratedAt = Date.distantPast
+    /// 오늘 로그에서 본 한도별 마지막 기록(파일 꼬리만 읽는 CodexLogReader가 놓치는 한도를 보완).
+    public private(set) var limits: [String: CodexLimit] = [:]
+    /// 직전 scan에서 읽은 바이트 수(큰 첫 스캔 뒤 메모리 반환 판단용).
+    public private(set) var lastBytesRead: UInt64 = 0
     private static let marker = Data(#""token_count""#.utf8)
     private static let chunk = 4 << 20
 
@@ -45,9 +49,11 @@ public final class CodexTokenScanner {
 
     public func scan(now: Date) -> CodexTokenTally {
         let start = calendar.startOfDay(for: now)
+        lastBytesRead = 0
         if day != start {
             day = start
             files = [:]
+            limits = [:]
             enumeratedAt = .distantPast
         }
         if now.timeIntervalSince(enumeratedAt) >= 60 || now < enumeratedAt {
@@ -61,7 +67,9 @@ public final class CodexTokenScanner {
             var f = files[path] ?? FileState()
             if size < f.offset { f = FileState() }
             if size == f.offset { files[path] = f; continue }
+            let before = f.offset
             read(path, into: &f, start: start)
+            lastBytesRead += f.offset - before
             files[path] = f
         }
 
@@ -108,8 +116,13 @@ public final class CodexTokenScanner {
                 guard let lastNL = carry.lastIndex(of: 0x0A) else { return }
                 let complete = carry[carry.startIndex...lastNL]
                 for line in complete.split(separator: 0x0A) where line.range(of: Self.marker) != nil {
-                    guard let (ts, u) = Self.parse(Data(line)) else { continue }
-                    if ts < start { f.baseline = u } else { f.latestToday = u }
+                    guard let j = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { continue }
+                    if let (ts, u) = Self.usage(json: j) {
+                        if ts < start { f.baseline = u } else { f.latestToday = u }
+                    }
+                    if let l = CodexLogReader.parse(json: j), (limits[l.id]?.observedAt ?? .distantPast) <= l.observedAt {
+                        limits[l.id] = l
+                    }
                 }
                 f.offset += UInt64(complete.count)
                 carry = Data(carry[carry.index(after: lastNL)...])
@@ -117,9 +130,8 @@ public final class CodexTokenScanner {
         }
     }
 
-    static func parse(_ line: Data) -> (Date, Usage)? {
-        guard let j = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              let p = j["payload"] as? [String: Any], p["type"] as? String == "token_count",
+    static func usage(json j: [String: Any]) -> (Date, Usage)? {
+        guard let p = j["payload"] as? [String: Any], p["type"] as? String == "token_count",
               let info = p["info"] as? [String: Any],
               let tot = info["total_token_usage"] as? [String: Any],
               let ts = ISODate.parse(j["timestamp"] as? String) else { return nil }

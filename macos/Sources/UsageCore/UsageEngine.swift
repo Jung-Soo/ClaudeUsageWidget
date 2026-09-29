@@ -6,6 +6,8 @@ struct PersistedState: Codable {
     var status: FetchStatus = .idle
     var lastAPI: UsageSnapshot?
     var plan: String?
+    /// 한 번 본 Codex 한도 기록. 파일 꼬리에 없는 한도도 재시작 후 유지된다.
+    var codexLimits: [CodexLimit]?
 }
 
 public struct EngineOutput: Sendable, Equatable {
@@ -26,8 +28,10 @@ public actor UsageEngine {
     /// Codex 값은 Codex를 쓸 때만 바뀌므로 30초에 한 번만 읽는다.
     private var codexSnapshot = CodexSnapshot()
     private var codexReadAt = Date.distantPast
-    /// 첫 스캔(오늘 로그 전체, 수백 MB일 수 있음) 뒤에 해제된 메모리를 바로 시스템에 돌려준다.
-    private var relievedAfterFirstScan = false
+    /// 로그를 많이 읽은 틱(첫 스캔, 자정 직후 재스캔, Codex를 나중에 켰을 때) 뒤에는 해제된 메모리를 바로 시스템에 돌려준다.
+    static let reliefThreshold: UInt64 = 32 << 20
+    /// 끄면 사용량 API를 부르지 않는다(스냅샷 모드).
+    private let allowNetwork: Bool
     private let stateURL: URL?
     private let clock: @Sendable () -> Date
     private let log: @Sendable (String) -> Void
@@ -40,8 +44,10 @@ public actor UsageEngine {
                 codexSessionsRoot: URL? = nil,
                 stateURL: URL?,
                 calendar: Calendar = .current,
+                allowNetwork: Bool = true,
                 clock: @escaping @Sendable () -> Date = { Date() },
                 log: @escaping @Sendable (String) -> Void = { _ in }) {
+        self.allowNetwork = allowNetwork
         self.credentials = credentials
         self.api = api
         self.desktop = desktop
@@ -67,7 +73,7 @@ public actor UsageEngine {
         var called = false
         if claude {
             tokens = scanner.scan(now: now)
-            if state.policy.shouldCall(now: now, force: force) {
+            if allowNetwork, state.policy.shouldCall(now: now, force: force) {
                 state.policy.willCall(now: now, force: force, interval: interval)
                 called = await callAPI(now: now, interval: interval)
                 save()
@@ -82,19 +88,36 @@ public actor UsageEngine {
         }
         var codexDisplay: CodexDisplay?
         var codexTokens: CodexTokenTally?
-        if codex, let codexReader {
+        var bytesRead = claude ? scanner.lastBytesRead : 0
+        if codex, let codexReader, let codexTokenScanner {
             if force || later.timeIntervalSince(codexReadAt) >= 30 {
                 codexSnapshot = codexReader.read(now: later)
                 codexReadAt = later
             }
-            codexDisplay = CodexResolver.resolve(codexSnapshot, now: later)
-            codexTokens = codexTokenScanner?.scan(now: later)
+            codexTokens = codexTokenScanner.scan(now: later)
+            bytesRead += codexTokenScanner.lastBytesRead
+            let merged = CodexSnapshot.merged(
+                [codexSnapshot.limits, Array(codexTokenScanner.limits.values), state.codexLimits ?? []],
+                horizon: later.addingTimeInterval(-8 * 86400))
+            if Self.worthSaving(merged.limits, over: state.codexLimits ?? []) {
+                state.codexLimits = merged.limits
+                save()
+            }
+            codexDisplay = CodexResolver.resolve(merged, now: later)
         }
-        if !relievedAfterFirstScan {
-            relievedAfterFirstScan = true
-            malloc_zone_pressure_relief(nil, 0)
-        }
+        if bytesRead >= Self.reliefThreshold { malloc_zone_pressure_relief(nil, 0) }
         return EngineOutput(display: display, tokens: tokens, calledAPI: called, codex: codexDisplay, codexTokens: codexTokens)
+    }
+
+    /// 한도 값(창·%·리셋)이 바뀌었거나 기록 시각이 10분 넘게 달라졌을 때만 저장한다(Codex 사용 중 매 틱 쓰기 방지).
+    static func worthSaving(_ new: [CodexLimit], over old: [CodexLimit]) -> Bool {
+        guard new.count == old.count else { return true }
+        let byID = Dictionary(old.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for l in new {
+            guard let o = byID[l.id], o.windows == l.windows else { return true }
+            if l.observedAt.timeIntervalSince(o.observedAt) > 600 { return true }
+        }
+        return false
     }
 
     /// 실제로 네트워크 호출을 했으면 true.

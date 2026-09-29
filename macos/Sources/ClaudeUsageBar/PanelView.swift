@@ -21,17 +21,19 @@ struct PanelView: View {
 
     @ViewBuilder
     private func content(now: Date) -> some View {
-        let claude = settings.showClaude ? claudeSection() : nil
-        let codex = settings.showCodex ? codexSection() : nil
+        let claude = settings.showClaude ? claudeSection(now: now) : nil
+        let codex = settings.showCodex ? codexSection(now: now) : nil
         VStack(spacing: 0) {
             if let claude {
                 section(claude, primary: true, controls: true, now: now)
             }
-            if let codex {
+            if settings.showCodex {
                 if claude != nil { sectionBreak }
-                section(codex, primary: claude == nil, controls: claude == nil, now: now)
-            } else if settings.showCodex && claude == nil {
-                emptyCodex
+                if let codex {
+                    section(codex, primary: claude == nil, controls: claude == nil, now: now)
+                } else {
+                    emptyCodex(controls: claude == nil)
+                }
             }
         }
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
@@ -57,16 +59,16 @@ struct PanelView: View {
         var note: (String, Bool)? = nil
     }
 
-    private func claudeSection() -> Section {
+    private func claudeSection(now: Date) -> Section {
         let d = store.display
         return Section(title: "Claude", plan: d.plan, dot: Palette.statusDot(d.status), rows: d.rows, active: d.active,
                        stale: { d.isStale($0) },
                        stats: [("크레딧", credit(d.credit), nil),
                                ("오늘 토큰", Text(Format.tokens(store.tokens.total)), claudeTokenHelp)],
-                       note: FooterText.make(d, now: Date()))
+                       note: FooterText.make(d, now: now))
     }
 
-    private func codexSection() -> Section? {
+    private func codexSection(now: Date) -> Section? {
         guard let c = store.codex else { return nil }
         var stats: [(label: String, value: Text, help: String?)] = []
         if let cr = c.credits {
@@ -76,17 +78,17 @@ struct PanelView: View {
             stats.append(("오늘 토큰", Text(Format.tokens(t.total)),
                           "입력 \(Format.tokens(t.input)) (캐시 \(Format.tokens(t.cachedInput))) · 출력 \(Format.tokens(t.output)) · 세션 \(t.sessions)개"))
         }
-        let ago = Format.ago(c.asOf, now: Date())
+        let ago = Format.ago(c.asOf, now: now)
         return Section(title: "Codex", plan: c.plan, dot: nil, rows: c.rows, active: c.active,
                        stale: { _ in c.isStale }, stats: stats,
                        note: c.isStale ? ("\(ago) 값 · Codex를 쓰면 갱신돼요", true) : ("\(ago) 사용", false))
     }
 
-    private var emptyCodex: some View {
+    private func emptyCodex(controls: Bool) -> some View {
         VStack(spacing: 6) {
-            header(Section(title: "Codex", plan: nil, dot: nil, rows: [], active: nil, stale: { _ in false }, stats: []), controls: true)
+            header(Section(title: "Codex", plan: nil, dot: nil, rows: [], active: nil, stale: { _ in false }, stats: []), controls: controls)
             Text("최근 8일 안에 Codex를 쓴 기록이 없어요").font(.system(size: 12)).foregroundStyle(.secondary)
-                .padding(.vertical, 20)
+                .padding(.vertical, controls ? 20 : 8)
         }
     }
 
