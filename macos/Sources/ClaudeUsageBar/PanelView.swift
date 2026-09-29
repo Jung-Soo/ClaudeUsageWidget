@@ -1,8 +1,8 @@
 import SwiftUI
 import UsageCore
 
-/// 패널. 켜진 서비스마다 섹션 하나(Claude 위, Codex 아래, 사이에 가로선).
-/// 섹션 = 머리줄 + 한도(기본: 큰 도넛 + 작은 도넛 / 작게: 한도별 가로 막대) + 크레딧·오늘 토큰.
+/// 패널. 켜진 서비스마다 섹션 하나(Claude 위, Codex 아래, 사이에 패널 양끝까지 닿는 띠).
+/// 섹션 = 머리줄 + 한도(기본: 큰 도넛 + 작은 도넛 / 작게: 한도별 가로 막대) + 크레딧·오늘 토큰 + 상태 줄.
 /// 도넛·막대를 누르면 남은 시간 ↔ 리셋 시각이 바뀐다.
 struct PanelView: View {
     let store: UsageStore
@@ -28,14 +28,19 @@ struct PanelView: View {
                 section(claude, primary: true, controls: true, now: now)
             }
             if let codex {
-                if claude != nil { Divider().padding(.vertical, 12) }
+                if claude != nil { sectionBreak }
                 section(codex, primary: claude == nil, controls: claude == nil, now: now)
             } else if settings.showCodex && claude == nil {
                 emptyCodex
             }
-            footer(now: now).padding(.top, 12)
         }
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
+    }
+
+    /// 섹션 사이 경계: 섹션 안의 가는 구분선과 구별되도록 패널 양끝까지 닿는 옅은 띠.
+    private var sectionBreak: some View {
+        Rectangle().fill(Color.primary.opacity(0.07)).frame(height: 6)
+            .padding(.horizontal, -16).padding(.top, 12).padding(.bottom, 14)
     }
 
     // MARK: - 섹션 모델
@@ -48,6 +53,8 @@ struct PanelView: View {
         var active: LimitRow?
         var stale: (LimitRow) -> Bool
         var stats: [(label: String, value: Text, help: String?)]
+        /// 섹션 끝 상태 줄(문구, 경고색 여부)
+        var note: (String, Bool)? = nil
     }
 
     private func claudeSection() -> Section {
@@ -55,7 +62,8 @@ struct PanelView: View {
         return Section(title: "Claude", plan: d.plan, dot: Palette.statusDot(d.status), rows: d.rows, active: d.active,
                        stale: { d.isStale($0) },
                        stats: [("크레딧", credit(d.credit), nil),
-                               ("오늘 토큰", Text(Format.tokens(store.tokens.total)), claudeTokenHelp)])
+                               ("오늘 토큰", Text(Format.tokens(store.tokens.total)), claudeTokenHelp)],
+                       note: FooterText.make(d, now: Date()))
     }
 
     private func codexSection() -> Section? {
@@ -68,8 +76,10 @@ struct PanelView: View {
             stats.append(("오늘 토큰", Text(Format.tokens(t.total)),
                           "입력 \(Format.tokens(t.input)) (캐시 \(Format.tokens(t.cachedInput))) · 출력 \(Format.tokens(t.output)) · 세션 \(t.sessions)개"))
         }
+        let ago = Format.ago(c.asOf, now: Date())
         return Section(title: "Codex", plan: c.plan, dot: nil, rows: c.rows, active: c.active,
-                       stale: { _ in c.isStale }, stats: stats)
+                       stale: { _ in c.isStale }, stats: stats,
+                       note: c.isStale ? ("\(ago) 값 · Codex를 쓰면 갱신돼요", true) : ("\(ago) 사용", false))
     }
 
     private var emptyCodex: some View {
@@ -111,6 +121,9 @@ struct PanelView: View {
                     }
                 }
                 .padding(.top, 12)
+            }
+            if let (text, warn) = s.note {
+                footerLine(text, warn: warn).frame(maxWidth: .infinity).padding(.top, 12)
             }
         }
     }
@@ -268,22 +281,7 @@ struct PanelView: View {
         return "입력 \(Format.tokens(t.input)) · 출력 \(Format.tokens(t.output)) · 캐시 쓰기 \(Format.tokens(t.cacheWrite)) · 캐시 읽기 \(Format.tokens(t.cacheRead)) · 메시지 \(t.messages)건"
     }
 
-    // MARK: - 맨 아래 줄
-
-    private func footer(now: Date) -> some View {
-        let both = settings.showClaude && settings.showCodex && store.codex != nil
-        return VStack(spacing: 3) {
-            if settings.showClaude {
-                let (line, warn) = FooterText.make(store.display, now: now)
-                footerLine(both ? "Claude " + line : line, warn: warn)
-            }
-            if settings.showCodex, let c = store.codex {
-                let ago = Format.ago(c.asOf, now: now)
-                footerLine(c.isStale ? "Codex \(ago) 값 · Codex를 쓰면 갱신돼요" : "Codex \(ago) 사용", warn: c.isStale)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
+    // MARK: - 상태 줄
 
     private func footerLine(_ text: String, warn: Bool) -> some View {
         Text(text)
