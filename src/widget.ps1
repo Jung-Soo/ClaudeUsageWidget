@@ -39,7 +39,7 @@ try { [void][CUW.Native]::SetProcessDPIAware() } catch {}
 [Windows.Forms.Application]::add_ThreadException({ param($s, $e) })
 
 # ---- 설정 ------------------------------------------------------------------------
-$Cfg = @{ X = -1; Y = -1; Interval = 180; IntervalV2 = $false; Opacity = 1.0; ZMode = 'desktop'; AutoRefresh = $true; ShowAbs = $false; Theme = 'dark'; TaskbarStrip = $true
+$Cfg = @{ X = -1; Y = -1; Interval = 180; IntervalV2 = $false; Opacity = 1.0; ZMode = 'desktop'; AutoRefresh = $true; ShowAbs = $false; Theme = 'dark'; TaskbarStrip = $true; Compact = $false
          Alerts = $true; WarnPct = 85; AlertPct = 95; PaceWarn = $true; CreditAlert = $true; Notified = ''; CreditSeen = -1.0 }
 if (Test-Path $SettingsFile) {
   try { $j = [IO.File]::ReadAllText($SettingsFile) | ConvertFrom-Json; foreach ($p in $j.PSObject.Properties) { if ($Cfg.ContainsKey($p.Name)) { $Cfg[$p.Name] = $p.Value } } } catch {}
@@ -173,11 +173,12 @@ $g0 = $form.CreateGraphics(); $script:k = $g0.DpiX / 96.0; $g0.Dispose()
 function Px([double]$v) { [float]($v * $script:k) }
 function PxI([double]$v) { [int][Math]::Round($v * $script:k) }
 
-$BaseW = 280
+$BaseW = 280; $BaseWCompact = 280
 $Lay = @{ Header = 44; Total = 402 }
-function Get-Height { $Lay.Total }
+function Get-Width { if ($Cfg.Compact) { $BaseWCompact } else { $BaseW } }
+function Get-Height { if ($Cfg.Compact) { 106 + 34 * (Get-Rows).Count } else { $Lay.Total } }
 function Apply-Size {
-  $sz = New-Object Drawing.Size((PxI $BaseW), (PxI (Get-Height)))
+  $sz = New-Object Drawing.Size((PxI (Get-Width)), (PxI (Get-Height)))
   if ($form.ClientSize -ne $sz) { $form.ClientSize = $sz; Keep-OnScreen }
 }
 function Keep-OnScreen {
@@ -336,6 +337,48 @@ function Draw-MiniRing($g, [float]$x0, [float]$y, $id, $label, $row, $base) {
   Reg $id ($x0 - (Px 8)) ($y + (Px 4)) (Px 128) (Px 60) ''
 }
 
+# 작은 모드: 한도별 가로 막대(선) 한 줄씩
+function Draw-Compact($g, [float]$W, [float]$y) {
+  foreach ($row in (Get-Rows)) {
+    $base = if ($row.Key -eq 'five') { $Col.Five } elseif ($row.Key -eq 'week') { $Col.Week } else { $Col.Model }
+    $label = if ($row.Key -eq 'five') { '5시간' } elseif ($row.Key -eq 'week') { '주간' } else { "$($row.Label) 주간" }
+    $c = RingColor $base $row.Pct; $shown = Anim $row.Key; $h = Px 34
+    if ($script:hover -eq $row.Id) { FillRound $g $Col.Hover (Px 8) $y ($W - (Px 16)) $h (Px 8) }
+    $cy = $y + (Px 11)
+    T $g $label $Fnt.Lbl $Col.Txt (Px 20) $cy
+    $val = '{0:0}%' -f $shown
+    T $g $val $Fnt.Pct $Col.Txt ($W - (Px 20)) $cy 'F'
+    $sub = KoLeft $row.Ts
+    if ($sub) { T $g $sub $Fnt.Sec $Col.Dim2 ($W - (Px 20) - (TW $val $Fnt.Pct) - (Px 8)) $cy 'F' }
+    $bh = Px 5; $by = $y + (Px 26) - $bh / 2; $bw = $W - (Px 40)
+    FillRound $g ([Drawing.Color]::FromArgb(50, $c.R, $c.G, $c.B)) (Px 20) $by $bw $bh ($bh / 2)
+    FillRound $g $c (Px 20) $by ($bw * $shown / 100.0) $bh ($bh / 2)
+    Reg $row.Id (Px 8) $y ($W - (Px 16)) $h ''
+    $y += $h
+  }
+  $y += Px 4
+  $dp = New-Object Drawing.Pen($Col.Div, 1); $g.DrawLine($dp, (Px 20), $y, ($W - (Px 20)), $y); $dp.Dispose()
+  $y += Px 4
+  $raw = "$(V 't_raw')".Split(','); $sum = 0.0
+  foreach ($x in $raw) { $n = 0.0; if ([double]::TryParse($x, [ref]$n)) { $sum += $n } }
+  $cy = $y + (Px 15)
+  if (Has-Credit) {
+    T $g '크레딧' $Fnt.Lbl $Col.Sec (Px 20) $cy
+    T $g (Money (V 'cr_used')) $Fnt.Pct $Col.Txt ((Px 20) + (TW '크레딧' $Fnt.Lbl) + (Px 6)) $cy
+  }
+  $tv = Human $sum
+  T $g $tv $Fnt.Pct $Col.Txt ($W - (Px 20)) $cy 'F'
+  T $g '오늘 토큰' $Fnt.Lbl $Col.Sec ($W - (Px 20) - (TW $tv $Fnt.Pct) - (Px 6)) $cy 'F'
+  $y += Px 30
+  $st = V 'status'
+  if ($st -in 'ok', '-', 'init') { T $g (AgeText) $Fnt.Sec $Col.Dim2 ($W / 2) ($y + (Px 8)) 'C' }
+  else {
+    $c2 = if ($st -match '^(429|error)$') { $Col.Amber } else { $Col.Red }
+    T $g (Status-Text) $Fnt.Sec $c2 ($W / 2) ($y + (Px 8)) 'C'
+    if ("$(V 'err')" -ne '-') { Reg 'err' (Px 8) ($y - (Px 6)) ($W - (Px 16)) (Px 24) '' }
+  }
+}
+
 function Draw-Card($g) {
   $g.SmoothingMode = 'AntiAlias'; $g.PixelOffsetMode = 'HighQuality'
   $script:regions.Clear()
@@ -346,6 +389,7 @@ function Draw-Card($g) {
     $pen = New-Object Drawing.Pen($Col.Border, 1); $g.DrawRectangle($pen, 0, 0, ($form.ClientSize.Width - 1), ($form.ClientSize.Height - 1)); $pen.Dispose()
   }
   $y = Draw-Header $g $W ([float]0)
+  if ($Cfg.Compact) { Draw-Compact $g $W $y } else {
   $rows = Get-Rows
   $rw = $rows | Where-Object { $_.Key -eq 'week' } | Select-Object -First 1
   $r5 = $rows | Where-Object { $_.Key -eq 'five' } | Select-Object -First 1
@@ -391,6 +435,7 @@ function Draw-Card($g) {
     $c = if ($st -match '^(429|error)$') { $Col.Amber } else { $Col.Red }
     T $g (Status-Text) $Fnt.Sec $c ($W / 2) ($y + (Px 8)) 'C'
     if ("$(V 'err')" -ne '-') { Reg 'err' (Px 8) ($y - (Px 6)) ($W - (Px 16)) (Px 24) '' }
+  }
   }
   if ($script:flashUntil -gt [DateTime]::Now) {
     $a = [int](90 + 165 * (0.5 + 0.5 * [Math]::Sin([Environment]::TickCount / 110.0)))
@@ -577,6 +622,12 @@ foreach ($z in @(@('light', '라이트'), @('dark', '다크'))) {
   $it.Add_Click({ param($s) $Cfg.Theme = "$($s.Tag)"; Save-Settings; Set-Theme $Cfg.Theme; try { Update-Tray } catch {} }); [void]$miTheme.DropDownItems.Add($it)
 }
 [void]$menu.Items.Add($miTheme)
+$miSize = New-Object Windows.Forms.ToolStripMenuItem('크기')
+foreach ($z in @(@('full', '기본'), @('compact', '작게 (가로 막대)'))) {
+  $it = New-Object Windows.Forms.ToolStripMenuItem($z[1]); $it.Tag = $z[0]
+  $it.Add_Click({ param($s) $Cfg.Compact = ("$($s.Tag)" -eq 'compact'); Save-Settings; Apply-Size; $form.Invalidate() }); [void]$miSize.DropDownItems.Add($it)
+}
+[void]$menu.Items.Add($miSize)
 [void]$menu.Items.Add('-')
 $miZ = New-Object Windows.Forms.ToolStripMenuItem('표시 방식')
 foreach ($z in @(@('desktop', '바탕화면에 두기 (다른 창 뒤)'), @('normal', '일반 창'), @('top', '항상 위'))) {
@@ -620,6 +671,7 @@ $mi = $menu.Items.Add('오류 로그 열기'); $mi.Add_Click({ $lp = Join-Path $
 $mi = $menu.Items.Add('데이터 폴더 열기'); $mi.Add_Click({ Start-Process explorer.exe $DataDir })
 $mi = $menu.Items.Add('종료'); $mi.Add_Click({ $form.Close() })
 $menu.Add_Opening({
+  foreach ($i in $miSize.DropDownItems) { $i.Checked = (($i.Tag -eq 'compact') -eq [bool]$Cfg.Compact) }
   foreach ($i in $miTheme.DropDownItems) { $i.Checked = ("$($i.Tag)" -eq "$($Cfg.Theme)") }
   $miStrip.Checked = [bool]$Cfg.TaskbarStrip; $miRef.Checked = [bool]$Cfg.AutoRefresh; $miAuto.Checked = Test-AutoStart
   $miAlOn.Checked = [bool]$Cfg.Alerts; $miPace.Checked = [bool]$Cfg.PaceWarn; $miCr.Checked = [bool]$Cfg.CreditAlert
@@ -763,7 +815,7 @@ $form.Add_FormClosed({
   try { $mutex.ReleaseMutex() } catch {}
 })
 
-$form.ClientSize = New-Object Drawing.Size((PxI $BaseW), (PxI (Get-Height)))
+$form.ClientSize = New-Object Drawing.Size((PxI (Get-Width)), (PxI (Get-Height)))
 Place-Initial
 Keep-OnScreen
 [Windows.Forms.Application]::Run($form)
