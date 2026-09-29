@@ -26,8 +26,10 @@ swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이
   - `SessionLogScanner.swift` `~/.claude/projects/**/*.jsonl` 오늘 토큰 증분 집계, `message.id|requestId` 중복 제거
   - `CodexUsage.swift` `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`(또는 `CODEX_HOME`)에서 `token_count` 이벤트의 `rate_limits`를 한도(`limit_id`)별로 마지막 값만 읽음. 세션 로그가 수 GB라 최근 30일 폴더·8일 안에 수정된 파일의 끝부분만 읽고, 수정 시각이 같으면 다시 읽지 않는다
   - `AlertEngine.swift` 경고/위험/100%/속도 예측/크레딧 알림 규칙(Codex 한도에도 같은 규칙, 제목에 "Codex")
-  - `UsageEngine.swift` 위를 묶는 actor
-- `Sources/ClaudeUsageBar/` — AppKit 상태 항목 + SwiftUI 패널·설정, 알림, 스냅샷 모드
+  - `CodexTokens.swift` 오늘 Codex 토큰: 세션별 `total_token_usage` 누적치(오늘 마지막 − 0시 이전 마지막). 첫 스캔은 오늘 수정된 파일 전체(수백 MB 가능), 이후 증분
+  - `UsageEngine.swift` 위를 묶는 actor. `tick(claude:codex:)`로 서비스별 켜기/끄기(Claude를 끄면 키체인·API 접근 안 함)
+- `Sources/ClaudeUsageBar/` — AppKit 상태 항목(하나, 서비스별 조각을 텍스트 첨부 이미지로 이어 붙임) + SwiftUI 패널(서비스별 섹션, 기본/작게)·설정, 알림, 스냅샷 모드
+- 큰 파일 읽기는 조각마다 `autoreleasepool`로 비운다(안 그러면 첫 스캔 때 메모리가 파일 크기만큼 오른다)
 - `Tests/UsageCoreTests/Fixtures/` — API 응답·데스크톱 기록·세션 로그 샘플
 
 ## 지켜야 할 원칙

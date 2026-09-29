@@ -6,7 +6,10 @@ import UsageCore
 @MainActor
 enum Snapshot {
     static func run(to dir: URL) async {
-        let settings = AppSettings()
+        // 사용자의 설정을 바꾸지 않도록 임시 저장소를 쓴다
+        let settings = AppSettings(defaults: UserDefaults(suiteName: "snapshot-\(UUID().uuidString)")!)
+        settings.showClaude = true
+        settings.showCodex = true
         let store = UsageStore.live(settings: settings)
         await store.refresh(force: false)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -28,19 +31,26 @@ enum Snapshot {
                 }
             }
             save(items.padding(10).background(bg).environment(\.colorScheme, scheme), dir.appendingPathComponent("menubar-\(name).png"))
-            if let c = store.codex {
-                let pair = HStack(spacing: 14) {
+            let seg = HStack(spacing: 12) {
+                ForEach(Array(StatusItemController.segments(store, style: .donutNumbers).enumerated()), id: \.offset) { _, sg in
                     HStack(spacing: 4) {
-                        StatusItemController.codexImageView(c)
-                        Text(StatusItemController.codexTitle(c, style: .donutNumbers)).font(.system(size: 13).monospacedDigit())
-                    }
-                    HStack(spacing: 4) {
-                        StatusItemController.imageView(store.display, style: .donutNumbers)
-                        Text(StatusItemController.titleText(store.display, style: .donutNumbers)).font(.system(size: 13).monospacedDigit())
+                        sg.image
+                        if !sg.text.isEmpty { Text(sg.text).font(.system(size: 13).monospacedDigit()) }
                     }
                 }
-                .frame(height: 24)
-                save(pair.padding(8).background(bg).environment(\.colorScheme, scheme), dir.appendingPathComponent("menubar-codex-\(name).png"))
+            }
+            .frame(height: 24)
+            save(seg.padding(8).background(bg).environment(\.colorScheme, scheme), dir.appendingPathComponent("menubar-combined-\(name).png"))
+            settings.compactPanel = true
+            save(PanelView(store: store).background(bg).environment(\.colorScheme, scheme), dir.appendingPathComponent("panel-compact-\(name).png"))
+            settings.compactPanel = false
+            if scheme == .light {
+                settings.showCodex = false
+                save(PanelView(store: store).background(bg).environment(\.colorScheme, scheme), dir.appendingPathComponent("panel-claude-only.png"))
+                settings.showCodex = true
+                settings.showClaude = false
+                save(PanelView(store: store).background(bg).environment(\.colorScheme, scheme), dir.appendingPathComponent("panel-codex-only.png"))
+                settings.showClaude = true
             }
         }
         for scheme in [NSAppearance.Name.aqua, .darkAqua] {

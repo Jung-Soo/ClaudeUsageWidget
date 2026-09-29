@@ -13,6 +13,7 @@ public struct EngineOutput: Sendable, Equatable {
     public var tokens: TokenTally
     public var calledAPI: Bool
     public var codex: CodexDisplay?
+    public var codexTokens: CodexTokenTally?
 }
 
 public actor UsageEngine {
@@ -21,9 +22,12 @@ public actor UsageEngine {
     private let desktop: any DesktopHistoryReading
     private let scanner: SessionLogScanner
     private let codexReader: CodexLogReader?
+    private let codexTokenScanner: CodexTokenScanner?
     /// Codex 값은 Codex를 쓸 때만 바뀌므로 30초에 한 번만 읽는다.
     private var codexSnapshot = CodexSnapshot()
     private var codexReadAt = Date.distantPast
+    /// 첫 스캔(오늘 로그 전체, 수백 MB일 수 있음) 뒤에 해제된 메모리를 바로 시스템에 돌려준다.
+    private var relievedAfterFirstScan = false
     private let stateURL: URL?
     private let clock: @Sendable () -> Date
     private let log: @Sendable (String) -> Void
@@ -43,6 +47,7 @@ public actor UsageEngine {
         self.desktop = desktop
         self.scanner = SessionLogScanner(root: projectsRoot, calendar: calendar)
         self.codexReader = codexSessionsRoot.map { CodexLogReader(root: $0, calendar: calendar) }
+        self.codexTokenScanner = codexSessionsRoot.map { CodexTokenScanner(root: $0, calendar: calendar) }
         self.stateURL = stateURL
         self.clock = clock
         self.log = log
@@ -54,26 +59,42 @@ public actor UsageEngine {
         }
     }
 
-    public func tick(force: Bool, interval: TimeInterval) async -> EngineOutput {
+    /// - claude: 끄면 키체인·API·Claude 로그를 전혀 건드리지 않는다
+    /// - codex: 끄면 Codex 로그를 읽지 않는다
+    public func tick(force: Bool, interval: TimeInterval, claude: Bool = true, codex: Bool = true) async -> EngineOutput {
         let now = clock()
-        let tokens = scanner.scan(now: now)
+        var tokens = TokenTally()
         var called = false
-
-        if state.policy.shouldCall(now: now, force: force) {
-            state.policy.willCall(now: now, force: force, interval: interval)
-            called = await callAPI(now: now, interval: interval)
-            save()
+        if claude {
+            tokens = scanner.scan(now: now)
+            if state.policy.shouldCall(now: now, force: force) {
+                state.policy.willCall(now: now, force: force, interval: interval)
+                called = await callAPI(now: now, interval: interval)
+                save()
+            }
         }
 
         let later = clock()
-        let display = DisplayResolver.resolve(api: state.lastAPI, desktop: desktop.latest(), status: state.status,
+        var display = DisplayState()
+        if claude {
+            display = DisplayResolver.resolve(api: state.lastAPI, desktop: desktop.latest(), status: state.status,
                                               plan: state.plan, now: later, interval: interval)
-        if let codexReader, force || later.timeIntervalSince(codexReadAt) >= 30 {
-            codexSnapshot = codexReader.read(now: later)
-            codexReadAt = later
         }
-        let codex = CodexResolver.resolve(codexSnapshot, now: later)
-        return EngineOutput(display: display, tokens: tokens, calledAPI: called, codex: codex)
+        var codexDisplay: CodexDisplay?
+        var codexTokens: CodexTokenTally?
+        if codex, let codexReader {
+            if force || later.timeIntervalSince(codexReadAt) >= 30 {
+                codexSnapshot = codexReader.read(now: later)
+                codexReadAt = later
+            }
+            codexDisplay = CodexResolver.resolve(codexSnapshot, now: later)
+            codexTokens = codexTokenScanner?.scan(now: later)
+        }
+        if !relievedAfterFirstScan {
+            relievedAfterFirstScan = true
+            malloc_zone_pressure_relief(nil, 0)
+        }
+        return EngineOutput(display: display, tokens: tokens, calledAPI: called, codex: codexDisplay, codexTokens: codexTokens)
     }
 
     /// 실제로 네트워크 호출을 했으면 true.

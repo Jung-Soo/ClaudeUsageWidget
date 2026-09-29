@@ -27,8 +27,13 @@ final class AppSettings {
 
     var interval: TimeInterval { didSet { defaults.set(interval, forKey: "apiInterval") } }
     var menubarStyle: MenubarStyle { didSet { defaults.set(menubarStyle.rawValue, forKey: "menubarStyle") } }
-    /// Codex 사용량(메뉴바 항목 + 패널 섹션). Codex 기록이 없으면 켜 있어도 안 보인다.
+    /// 표시할 서비스. 처음에는 `~/.claude`, `~/.codex/sessions`가 있는지로 정한다. 둘 다 끌 수는 없다.
+    var showClaude: Bool { didSet { defaults.set(showClaude, forKey: "showClaude") } }
     var showCodex: Bool { didSet { defaults.set(showCodex, forKey: "showCodex") } }
+    /// 패널을 도넛 대신 한도별 가로 막대로(원본 Windows 위젯의 '작게' 모드).
+    var compactPanel: Bool { didSet { defaults.set(compactPanel, forKey: "compactPanel") } }
+    /// 남은 시간 대신 리셋 시각을 보여 준다(도넛·막대 클릭으로 전환).
+    var showAbsoluteReset: Bool { didSet { defaults.set(showAbsoluteReset, forKey: "showAbsoluteReset") } }
     var alerts: AlertSettings {
         didSet { if let d = try? JSONEncoder().encode(alerts) { defaults.set(d, forKey: "alerts") } }
     }
@@ -38,7 +43,16 @@ final class AppSettings {
         let i = defaults.double(forKey: "apiInterval")
         interval = FetchPolicy.clamp(i > 0 ? i : 180)
         menubarStyle = MenubarStyle(rawValue: defaults.integer(forKey: "menubarStyle")) ?? .donutNumbers
-        showCodex = defaults.object(forKey: "showCodex") as? Bool ?? true
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let env = ProcessInfo.processInfo.environment
+        let hasClaude = FileManager.default.fileExists(atPath: env["CLAUDE_CONFIG_DIR"] ?? home.appendingPathComponent(".claude").path)
+        let hasCodex = FileManager.default.fileExists(atPath: (env["CODEX_HOME"] ?? home.appendingPathComponent(".codex").path) + "/sessions")
+        let claude = defaults.object(forKey: "showClaude") as? Bool ?? (hasClaude || !hasCodex)
+        let codex = defaults.object(forKey: "showCodex") as? Bool ?? hasCodex
+        showClaude = claude || !codex
+        showCodex = codex
+        compactPanel = defaults.bool(forKey: "compactPanel")
+        showAbsoluteReset = defaults.bool(forKey: "showAbsoluteReset")
         alerts = defaults.data(forKey: "alerts").flatMap { try? JSONDecoder().decode(AlertSettings.self, from: $0) } ?? AlertSettings()
     }
 

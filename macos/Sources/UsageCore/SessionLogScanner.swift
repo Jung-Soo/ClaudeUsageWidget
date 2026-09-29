@@ -66,18 +66,19 @@ public final class SessionLogScanner {
         do { try fh.seek(toOffset: pos) } catch { return pos }
         var consumed = pos
         var carry = Data()
-        while true {
-            guard let data = try? fh.read(upToCount: Self.chunk), !data.isEmpty else { break }
-            carry.append(data)
-            guard let lastNL = carry.lastIndex(of: 0x0A) else { continue }
-            let complete = carry[carry.startIndex...lastNL]
-            autoreleasepool {   // JSONSerialization이 만드는 임시 객체를 청크마다 비운다
+        var done = false
+        while !done {
+            autoreleasepool {   // 읽은 조각과 JSONSerialization 임시 객체를 조각마다 비운다
+                guard let data = try? fh.read(upToCount: Self.chunk), !data.isEmpty else { done = true; return }
+                carry.append(data)
+                guard let lastNL = carry.lastIndex(of: 0x0A) else { return }
+                let complete = carry[carry.startIndex...lastNL]
                 for line in complete.split(separator: 0x0A, omittingEmptySubsequences: true) {
                     handle(Data(line), start: start, end: end)
                 }
+                consumed += UInt64(complete.count)
+                carry = Data(carry[carry.index(after: lastNL)...])
             }
-            consumed += UInt64(complete.count)
-            carry = Data(carry[carry.index(after: lastNL)...])
         }
         return consumed
     }

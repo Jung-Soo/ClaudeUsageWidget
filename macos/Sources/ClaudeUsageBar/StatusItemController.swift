@@ -2,15 +2,15 @@ import AppKit
 import SwiftUI
 import UsageCore
 
-/// 메뉴바 항목. 형식은 설정(①~④)을 따르고 기본은 ④ 도넛 + 숫자 3개(5시간 · 주간 · 모델별 최고치).
-/// ③·④가 노치 뒤로 가려지면 ②로 줄이고, 10분마다·화면 구성이 바뀔 때 다시 넓혀 본다.
-/// Codex 기록이 있고 설정이 켜져 있으면 왼쪽에 Codex 항목(도넛 + 가장 높은 %)을 따로 둔다. 어느 항목을 눌러도 같은 패널이 열린다.
+/// 메뉴바 항목 하나. 켜진 서비스마다 [도넛 + 숫자] 조각을 이어 붙인다: `◔ 13 · 27 · 11  ◔ 45`
+/// - Claude 조각은 설정의 형식(①~④)을 따르고, Codex 조각은 도넛 + 가장 높은 %(①·③이면 도넛만)
+/// - ③·④가 노치 뒤로 가려지면 Claude 조각을 ②로 줄이고, 10분마다·화면 구성이 바뀔 때 다시 넓혀 본다
+/// - 도넛은 텍스트 안의 이미지 첨부로 넣어서, 글자색은 메뉴바 밝기에 맞춰 시스템이 정한다
 @MainActor
 final class StatusItemController: NSObject {
     private let store: UsageStore
     private let openSettings: () -> Void
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private var codexItem: NSStatusItem?
     private let popover = NSPopover()
     private var compact = false
     /// 시작 직후 창이 뜨기 전에도 '안 보임' 알림이 와서, 한 번 보인 뒤부터만 판단한다.
@@ -36,6 +36,7 @@ final class StatusItemController: NSObject {
             b.target = self
             b.action = #selector(clicked(_:))
             b.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            b.imagePosition = .noImage
         }
         render()
 
@@ -57,85 +58,74 @@ final class StatusItemController: NSObject {
 
     func render() {
         guard let b = item.button else { return }
-        let d = store.display
-        let style = effectiveStyle
-        b.image = Self.image(d, style: style, scale: NSScreen.main?.backingScaleFactor ?? 2)
-        let title = Self.titleText(d, style: style)
-        b.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
-        b.attributedTitle = NSAttributedString(string: title.isEmpty ? "" : " " + title, attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular),
-            .baselineOffset: 0.5,
-        ])
-        b.toolTip = tooltip(d)
-        renderCodex()
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
+        let segs = Self.segments(store, style: effectiveStyle)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        let out = NSMutableAttributedString()
+        for (i, seg) in segs.enumerated() {
+            if i > 0 { out.append(NSAttributedString(string: "   ", attributes: [.font: font])) }
+            if let img = Self.render(seg.image, scale: scale) {
+                let a = NSTextAttachment()
+                a.image = img
+                a.bounds = CGRect(x: 0, y: (font.capHeight - img.size.height) / 2, width: img.size.width, height: img.size.height)
+                out.append(NSAttributedString(attachment: a))
+            }
+            if !seg.text.isEmpty { out.append(NSAttributedString(string: " " + seg.text, attributes: [.font: font])) }
+        }
+        b.image = nil
+        b.attributedTitle = out
+        b.toolTip = tooltip()
 
         if compact, Date().timeIntervalSince(lastExpandTry) > 600 { tryExpand() }
     }
 
-    private func renderCodex() {
-        let settings = store.settings
-        guard settings.showCodex, let c = store.codex, c.active != nil else {
-            if let codexItem { NSStatusBar.system.removeStatusItem(codexItem); self.codexItem = nil }
-            return
-        }
-        if codexItem == nil {
-            let it = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-            it.button?.target = self
-            it.button?.action = #selector(clicked(_:))
-            it.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            codexItem = it
-        }
-        guard let b = codexItem?.button else { return }
-        b.image = Self.codexImage(c, scale: NSScreen.main?.backingScaleFactor ?? 2)
-        let title = Self.codexTitle(c, style: settings.menubarStyle)
-        b.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
-        b.attributedTitle = NSAttributedString(string: title.isEmpty ? "" : " " + title, attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular),
-            .baselineOffset: 0.5,
-        ])
-        b.toolTip = (["Codex"] + c.rows.map { "\($0.name) \(Format.percent($0.percent))%" }).joined(separator: " · ")
-            + (c.isStale ? " · \(Format.ago(c.asOf, now: Date())) 값" : "")
-    }
-
-    static func codexTitle(_ c: CodexDisplay, style: MenubarStyle) -> String {
-        guard let a = c.active, style != .donut, style != .threeDonuts else { return "" }
-        return Format.percent(a.percent)
-    }
-
-    static func codexImageView(_ c: CodexDisplay) -> some View {
-        let a = c.active
-        return Donut(percent: a?.percent ?? 0, color: a.map { Palette.color(for: $0, stale: c.isStale) } ?? Palette.stale,
-                     lineWidth: 2.6).frame(width: 15, height: 15)
-    }
-
-    static func codexImage(_ c: CodexDisplay, scale: CGFloat) -> NSImage? {
-        let r = ImageRenderer(content: codexImageView(c))
-        r.scale = scale
-        let img = r.nsImage
-        img?.isTemplate = false
-        return img
-    }
-
     func showPanel() {
-        guard let b = item.button else { return }
-        showPanel(from: b)
-    }
-
-    private func showPanel(from b: NSStatusBarButton) {
-        guard !popover.isShown else { return }
+        guard let b = item.button, !popover.isShown else { return }
         popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         Task { await store.refresh(force: false) }
     }
 
-    private func tooltip(_ d: DisplayState) -> String {
-        var parts = d.rows.map { "\($0.name) \(Format.percent($0.percent))%" }
-        if parts.isEmpty { parts = ["Claude 사용량"] }
-        if d.source == .desktopHistory { parts.append("데스크톱 앱 기록") }
-        return parts.joined(separator: " · ")
+    private func tooltip() -> String {
+        var lines: [String] = []
+        if store.settings.showClaude {
+            let d = store.display
+            let parts = d.rows.map { "\($0.name) \(Format.percent($0.percent))%" }
+            lines.append("Claude  " + (parts.isEmpty ? "데이터 없음" : parts.joined(separator: " · "))
+                         + (d.source == .desktopHistory ? " (데스크톱 앱 기록)" : ""))
+        }
+        if store.settings.showCodex {
+            if let c = store.codex {
+                lines.append("Codex  " + c.rows.map { "\($0.name) \(Format.percent($0.percent))%" }.joined(separator: " · ")
+                             + (c.isStale ? " (\(Format.ago(c.asOf, now: Date())) 값)" : ""))
+            } else {
+                lines.append("Codex  최근 기록 없음")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
-    // MARK: - 그리기 (스냅샷 모드도 같은 함수를 쓴다)
+    // MARK: - 조각 (스냅샷 모드도 같은 함수를 쓴다)
+
+    struct Segment {
+        var image: AnyView
+        var text: String
+    }
+
+    static func segments(_ store: UsageStore, style: MenubarStyle) -> [Segment] {
+        var out: [Segment] = []
+        if store.settings.showClaude {
+            out.append(Segment(image: imageView(store.display, style: style), text: titleText(store.display, style: style)))
+        }
+        if store.settings.showCodex, let c = store.codex {
+            out.append(Segment(image: AnyView(codexImageView(c)), text: codexTitle(c, style: style)))
+        }
+        if out.isEmpty {
+            out.append(Segment(image: AnyView(Donut(percent: 0, color: Palette.stale, lineWidth: 2.6).frame(width: 15, height: 15)),
+                               text: "–"))
+        }
+        return out
+    }
 
     static func titleText(_ d: DisplayState, style: MenubarStyle) -> String {
         guard let a = d.active else { return style == .donut || style == .threeDonuts ? "" : "–" }
@@ -161,8 +151,19 @@ final class StatusItemController: NSObject {
         return AnyView(Donut(percent: d.active?.percent ?? 0, color: color(d.active), lineWidth: 2.6).frame(width: 15, height: 15))
     }
 
-    static func image(_ d: DisplayState, style: MenubarStyle, scale: CGFloat) -> NSImage? {
-        let r = ImageRenderer(content: imageView(d, style: style))
+    static func codexTitle(_ c: CodexDisplay, style: MenubarStyle) -> String {
+        guard let a = c.active, style != .donut, style != .threeDonuts else { return "" }
+        return style == .donutActive ? "\(Format.percent(a.percent))%" : Format.percent(a.percent)
+    }
+
+    static func codexImageView(_ c: CodexDisplay) -> some View {
+        let a = c.active
+        return Donut(percent: a?.percent ?? 0, color: a.map { Palette.color(for: $0, stale: c.isStale) } ?? Palette.stale,
+                     lineWidth: 2.6).frame(width: 15, height: 15)
+    }
+
+    static func render(_ view: AnyView, scale: CGFloat) -> NSImage? {
+        let r = ImageRenderer(content: view)
         r.scale = scale
         let img = r.nsImage
         img?.isTemplate = false
@@ -199,13 +200,12 @@ final class StatusItemController: NSObject {
             menu.addItem(withTitle: "데이터 폴더 열기", action: #selector(openData), keyEquivalent: "").target = self
             menu.addItem(.separator())
             menu.addItem(withTitle: "종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-            let owner = sender == codexItem?.button ? codexItem! : item
-            owner.menu = menu
+            item.menu = menu
             sender.performClick(nil)
-            owner.menu = nil
+            item.menu = nil
             return
         }
-        if popover.isShown { popover.performClose(nil) } else { showPanel(from: sender) }
+        if popover.isShown { popover.performClose(nil) } else { showPanel() }
     }
 
     @objc private func refreshNow() { Task { await store.refresh(force: true) } }

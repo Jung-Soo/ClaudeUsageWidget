@@ -110,3 +110,63 @@ import Testing
         #expect(CodexResolver.planLabel("prolite") == "Pro Lite")
     }
 }
+
+@Suite struct CodexTokenTests {
+    let now = date("2026-09-29T03:00:00Z")   // 12:00 KST, 0시 KST = 09-28T15:00Z
+
+    func tc(_ ts: String, total: Int64, input: Int64, cached: Int64, output: Int64) -> String {
+        let usage: [String: Any] = ["input_tokens": input, "cached_input_tokens": cached, "output_tokens": output, "total_tokens": total]
+        let obj: [String: Any] = ["timestamp": ts, "type": "event_msg",
+                                  "payload": ["type": "token_count", "info": ["total_token_usage": usage, "last_token_usage": usage]]]
+        return String(decoding: try! JSONSerialization.data(withJSONObject: obj), as: UTF8.self)
+    }
+
+    func write(_ root: URL, _ path: String, _ lines: [String]) throws -> URL {
+        let url = root.appendingPathComponent(path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    @Test func todayIsLatestMinusBaseline() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ct-\(UUID().uuidString)")
+        // 어제 시작해 오늘까지 이어진 세션: 0시 전 누적 1000 → 오늘 누적 1600, 중복 이벤트 포함
+        _ = try write(root, "2026/09/28/rollout-a.jsonl", [
+            tc("2026-09-28T14:00:00.000Z", total: 1000, input: 900, cached: 500, output: 100),
+            tc("2026-09-28T16:00:00.000Z", total: 1300, input: 1150, cached: 600, output: 150),
+            tc("2026-09-28T16:00:01.000Z", total: 1300, input: 1150, cached: 600, output: 150),
+            tc("2026-09-29T01:00:00.000Z", total: 1600, input: 1400, cached: 700, output: 200),
+        ])
+        // 오늘 시작한 세션
+        let b = try write(root, "2026/09/29/rollout-b.jsonl", [tc("2026-09-29T02:00:00.000Z", total: 50, input: 40, cached: 0, output: 10)])
+
+        let s = CodexTokenScanner(root: root, calendar: seoul)
+        var t = s.scan(now: now)
+        #expect(t.total == 600 + 50)
+        #expect(t.output == 100 + 10)
+        #expect(t.cachedInput == 200)
+        #expect(t.sessions == 2)
+
+        let h = try FileHandle(forWritingTo: b)
+        h.seekToEndOfFile()
+        h.write(Data((tc("2026-09-29T02:30:00.000Z", total: 80, input: 60, cached: 0, output: 20) + "\n").utf8))
+        try h.close()
+        t = s.scan(now: now)
+        #expect(t.total == 600 + 80)
+    }
+}
+
+@Suite struct ProviderToggleTests {
+    @Test func claudeOffSkipsKeychainAndAPI() async {
+        let t0 = date("2026-09-29T03:00:00Z")
+        let api = StubAPI(.success(UsageSnapshot(fiveHour: nil, weekly: nil, models: [], credit: nil, fetchedAt: t0)))
+        let e = UsageEngine(credentials: StubCredentials(cred: OAuthCredential(accessToken: "x", expiresAt: t0 + 3600)),
+                            api: api, desktop: StubDesktop(list: []),
+                            projectsRoot: FileManager.default.temporaryDirectory.appendingPathComponent("none"),
+                            stateURL: nil, calendar: seoul, clock: { t0 })
+        let out = await e.tick(force: true, interval: 180, claude: false, codex: false)
+        #expect(api.calls == 0)
+        #expect(out.display.rows.isEmpty)
+        #expect(out.codex == nil)
+    }
+}

@@ -12,14 +12,27 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Claude", isOn: $settings.showClaude).disabled(settings.showClaude && !settings.showCodex)
+                Toggle("Codex", isOn: $settings.showCodex).disabled(settings.showCodex && !settings.showClaude)
+            } header: {
+                Text("표시할 서비스")
+            } footer: {
+                Text("쓰지 않는 서비스는 끄세요. Claude를 끄면 키체인·사용량 API에 접근하지 않습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("일반") {
-                Picker("한도 조회 주기", selection: $settings.interval) {
-                    ForEach([120.0, 180, 300, 600], id: \.self) { Text("\(Int($0 / 60))분").tag($0) }
-                }
                 Picker("메뉴바 표시", selection: $settings.menubarStyle) {
                     ForEach(MenubarStyle.allCases) { Text($0.label).tag($0) }
                 }
-                Toggle("Codex 사용량도 표시", isOn: $settings.showCodex)
+                Picker("패널 크기", selection: $settings.compactPanel) {
+                    Text("기본 (도넛)").tag(false)
+                    Text("작게 (가로 막대)").tag(true)
+                }
+                Picker("Claude 한도 조회 주기", selection: $settings.interval) {
+                    ForEach([120.0, 180, 300, 600], id: \.self) { Text("\(Int($0 / 60))분").tag($0) }
+                }
+                .disabled(!settings.showClaude)
                 Toggle("로그인 시 자동 실행", isOn: Binding(get: { loginOn }, set: { on in
                     loginError = settings.setLaunchAtLogin(on)
                     loginOn = settings.launchAtLogin

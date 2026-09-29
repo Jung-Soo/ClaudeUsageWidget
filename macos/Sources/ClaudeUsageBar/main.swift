@@ -38,12 +38,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.start()
     }
 
-    /// 메뉴바 표시 형식·Codex 표시 설정이 바뀌면 바로 다시 그린다.
+    /// 메뉴바 형식·표시할 서비스가 바뀌면 다시 읽고 다시 그린다.
     private func observeStyle(_ settings: AppSettings, _ status: StatusItemController) {
-        withObservationTracking({ _ = (settings.menubarStyle, settings.showCodex) }, onChange: { [weak self, weak status] in
+        withObservationTracking({ _ = (settings.menubarStyle, settings.showClaude, settings.showCodex) }, onChange: { [weak self, weak status] in
             Task { @MainActor in
                 guard let status else { return }
                 status.render()
+                await self?.store?.refresh(force: false)
                 self?.observeStyle(settings, status)
             }
         })

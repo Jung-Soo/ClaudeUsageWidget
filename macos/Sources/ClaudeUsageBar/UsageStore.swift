@@ -8,6 +8,7 @@ final class UsageStore {
     private(set) var display = DisplayState()
     private(set) var tokens = TokenTally()
     private(set) var codex: CodexDisplay?
+    private(set) var codexTokens: CodexTokenTally?
     private(set) var isRefreshing = false
     var onChange: (() -> Void)?
     var onAlerts: (([AlertEvent]) -> Void)?
@@ -56,10 +57,12 @@ final class UsageStore {
 
     func refresh(force: Bool) async {
         if force { isRefreshing = true }
-        let out = await engine.tick(force: force, interval: settings.interval)
+        let out = await engine.tick(force: force, interval: settings.interval,
+                                    claude: settings.showClaude, codex: settings.showCodex)
         display = out.display
         tokens = out.tokens
         codex = out.codex
+        codexTokens = out.codexTokens
         isRefreshing = false
         evaluateAlerts()
         onChange?()
@@ -67,7 +70,7 @@ final class UsageStore {
 
     private func evaluateAlerts() {
         let before = alertState
-        var events = alertState.evaluate(display, now: Date(), settings: settings.alerts)
+        var events = settings.showClaude ? alertState.evaluate(display, now: Date(), settings: settings.alerts) : []
         if settings.showCodex, let c = codex {
             // 같은 규칙으로 평가하되, 알림 제목에 "Codex"를 붙이고 멈춘 값이면 건너뛴다
             var d = DisplayState()

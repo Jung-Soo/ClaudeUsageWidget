@@ -1,7 +1,9 @@
 import SwiftUI
 import UsageCore
 
-/// 드롭다운 A안: 큰 도넛(지금 걸린 한도) + 작은 도넛(나머지) + (Codex 섹션) + 크레딧·오늘 토큰.
+/// 패널. 켜진 서비스마다 섹션 하나(Claude 위, Codex 아래, 사이에 가로선).
+/// 섹션 = 머리줄 + 한도(기본: 큰 도넛 + 작은 도넛 / 작게: 한도별 가로 막대) + 크레딧·오늘 토큰.
+/// 도넛·막대를 누르면 남은 시간 ↔ 리셋 시각이 바뀐다.
 struct PanelView: View {
     let store: UsageStore
     var onOpenSettings: () -> Void = {}
@@ -15,121 +17,186 @@ struct PanelView: View {
         .frame(width: 280)
     }
 
+    private var settings: AppSettings { store.settings }
+
     @ViewBuilder
     private func content(now: Date) -> some View {
-        let d = store.display
-        let codex = store.settings.showCodex ? store.codex : nil
+        let claude = settings.showClaude ? claudeSection() : nil
+        let codex = settings.showCodex ? codexSection() : nil
         VStack(spacing: 0) {
-            header(d)
-            hero(d, now: now, size: codex == nil ? 132 : 108)
-                .padding(.top, codex == nil ? 18 : 14).padding(.bottom, codex == nil ? 16 : 12)
-            if !d.others.isEmpty {
-                Divider()
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
-                          spacing: 12) {
-                    ForEach(d.others) { small($0, d: d, now: now) }
-                }
-                .padding(.vertical, 12)
+            if let claude {
+                section(claude, primary: true, controls: true, now: now)
             }
             if let codex {
-                Divider()
-                codexSection(codex, now: now).padding(.vertical, 12)
+                if claude != nil { Divider().padding(.vertical, 12) }
+                section(codex, primary: claude == nil, controls: claude == nil, now: now)
+            } else if settings.showCodex && claude == nil {
+                emptyCodex
             }
-            Divider()
-            HStack(alignment: .top) {
-                stat("크레딧", credit(d.credit))
-                stat(codex == nil ? "오늘 토큰" : "Claude 오늘 토큰", Format.tokens(store.tokens.total))
-                    .help(tokenBreakdown)
-            }
-            .padding(.top, 12)
-            footer(d, codex: codex, now: now)
-                .padding(.top, 12)
+            footer(now: now).padding(.top, 12)
         }
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
     }
 
-    private func header(_ d: DisplayState) -> some View {
-        HStack(spacing: 6) {
-            Text("Claude").font(.system(size: 14, weight: .medium))
-            if let plan = d.plan { Text(plan).font(.system(size: 11)).foregroundStyle(.secondary) }
-            Spacer()
-            Circle().fill(Palette.statusDot(d.status)).frame(width: 7, height: 7)
-            Button { Task { await store.refresh(force: true) } } label: {
-                Image(systemName: "arrow.clockwise")
-                    .rotationEffect(.degrees(store.isRefreshing ? 360 : 0))
-                    .animation(store.isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default,
-                               value: store.isRefreshing)
-            }
-            .buttonStyle(.plain).foregroundStyle(.secondary).help("지금 갱신")
-            .padding(.leading, 4)
-            Menu {
-                Button("지금 갱신") { Task { await store.refresh(force: true) } }
-                Button("설정…", action: onOpenSettings)
-                Button("데이터 폴더 열기", action: onOpenData)
-                Divider()
-                Button("종료", action: onQuit)
-            } label: { Image(systemName: "ellipsis") }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .foregroundStyle(.secondary)
+    // MARK: - 섹션 모델
+
+    struct Section {
+        var title: String
+        var plan: String?
+        var dot: Color?
+        var rows: [LimitRow]
+        var active: LimitRow?
+        var stale: (LimitRow) -> Bool
+        var stats: [(label: String, value: Text, help: String?)]
+    }
+
+    private func claudeSection() -> Section {
+        let d = store.display
+        return Section(title: "Claude", plan: d.plan, dot: Palette.statusDot(d.status), rows: d.rows, active: d.active,
+                       stale: { d.isStale($0) },
+                       stats: [("크레딧", credit(d.credit), nil),
+                               ("오늘 토큰", Text(Format.tokens(store.tokens.total)), claudeTokenHelp)])
+    }
+
+    private func codexSection() -> Section? {
+        guard let c = store.codex else { return nil }
+        var stats: [(label: String, value: Text, help: String?)] = []
+        if let cr = c.credits {
+            stats.append(("크레딧", Text(cr.unlimited ? "무제한" : cr.balance ?? "-"), nil))
+        }
+        if let t = store.codexTokens {
+            stats.append(("오늘 토큰", Text(Format.tokens(t.total)),
+                          "입력 \(Format.tokens(t.input)) (캐시 \(Format.tokens(t.cachedInput))) · 출력 \(Format.tokens(t.output)) · 세션 \(t.sessions)개"))
+        }
+        return Section(title: "Codex", plan: c.plan, dot: nil, rows: c.rows, active: c.active,
+                       stale: { _ in c.isStale }, stats: stats)
+    }
+
+    private var emptyCodex: some View {
+        VStack(spacing: 6) {
+            header(Section(title: "Codex", plan: nil, dot: nil, rows: [], active: nil, stale: { _ in false }, stats: []), controls: true)
+            Text("최근 8일 안에 Codex를 쓴 기록이 없어요").font(.system(size: 12)).foregroundStyle(.secondary)
+                .padding(.vertical, 20)
         }
     }
 
+    // MARK: - 섹션 그리기
+
     @ViewBuilder
-    private func hero(_ d: DisplayState, now: Date, size: CGFloat) -> some View {
-        if let a = d.active {
-            VStack(spacing: 10) {
-                ZStack {
-                    Donut(percent: a.percent, color: Palette.color(for: a, stale: d.isStale(a)), lineWidth: size / 10)
-                    VStack(spacing: 2) {
-                        Text("\(Format.percent(a.percent))%")
-                            .font(.system(size: size * 0.23, weight: .medium)).monospacedDigit()
-                        Text(a.name).font(.system(size: 12)).foregroundStyle(.secondary)
+    private func section(_ s: Section, primary: Bool, controls: Bool, now: Date) -> some View {
+        VStack(spacing: 0) {
+            header(s, controls: controls)
+            if settings.compactPanel {
+                VStack(spacing: 10) { ForEach(s.rows) { bar($0, stale: s.stale($0), now: now) } }
+                    .padding(.top, 12).padding(.bottom, 12)
+            } else {
+                if primary { hero(s, now: now).padding(.top, 16).padding(.bottom, 14) }
+                else { sideHero(s, now: now).padding(.top, 12).padding(.bottom, 12) }
+                let others = s.rows.filter { $0.id != s.active?.id }
+                if !others.isEmpty {
+                    Divider()
+                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                              spacing: 12) {
+                        ForEach(others) { small($0, stale: s.stale($0), now: now) }
+                    }
+                    .padding(.vertical, 12)
+                }
+            }
+            if !s.stats.isEmpty {
+                Divider()
+                HStack(alignment: .top) {
+                    ForEach(Array(s.stats.enumerated()), id: \.offset) { _, st in
+                        stat(st.label, st.value).help(st.help ?? "")
                     }
                 }
-                .frame(width: size, height: size)
-                Text(Format.left(until: a.resetsAt, now: now).map { "\($0) 후 리셋" } ?? "리셋 시각 모름")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).monospacedDigit()
+                .padding(.top, 12)
             }
+        }
+    }
+
+    private func header(_ s: Section, controls: Bool) -> some View {
+        HStack(spacing: 6) {
+            Text(s.title).font(.system(size: 14, weight: .medium))
+            if let plan = s.plan { Text(plan).font(.system(size: 11)).foregroundStyle(.secondary) }
+            Spacer()
+            if let dot = s.dot { Circle().fill(dot).frame(width: 7, height: 7) }
+            if controls {
+                Button { Task { await store.refresh(force: true) } } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .rotationEffect(.degrees(store.isRefreshing ? 360 : 0))
+                        .animation(store.isRefreshing ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default,
+                                   value: store.isRefreshing)
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary).help("지금 갱신")
+                .padding(.leading, 4)
+                Menu {
+                    Button("지금 갱신") { Task { await store.refresh(force: true) } }
+                    Button("설정…", action: onOpenSettings)
+                    Button("데이터 폴더 열기", action: onOpenData)
+                    Divider()
+                    Button("종료", action: onQuit)
+                } label: { Image(systemName: "ellipsis") }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func resetText(_ r: LimitRow, now: Date) -> String {
+        if settings.showAbsoluteReset, let at = Format.resetAt(r.resetsAt) { return "\(at) 리셋" }
+        if let left = Format.left(until: r.resetsAt, now: now) { return left == "곧" ? "곧 리셋" : "\(left) 후 리셋" }
+        return r.kind.isCodex ? "리셋됨" : "리셋 시각 모름"
+    }
+
+    private func shortReset(_ r: LimitRow, now: Date) -> String {
+        if settings.showAbsoluteReset, let at = Format.resetAt(r.resetsAt, short: true) { return at }
+        return Format.left(until: r.resetsAt, now: now) ?? "-"
+    }
+
+    private func toggleReset() { settings.showAbsoluteReset.toggle() }
+
+    @ViewBuilder
+    private func hero(_ s: Section, now: Date) -> some View {
+        if let a = s.active {
+            VStack(spacing: 10) {
+                ZStack {
+                    Donut(percent: a.percent, color: Palette.color(for: a, stale: s.stale(a)), lineWidth: 13)
+                    VStack(spacing: 2) {
+                        Text("\(Format.percent(a.percent))%").font(.system(size: 30, weight: .medium)).monospacedDigit()
+                        Text(a.name).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .frame(width: 132, height: 132)
+                Text(resetText(a, now: now)).font(.system(size: 12)).foregroundStyle(.secondary).monospacedDigit()
+            }
+            .contentShape(Rectangle()).onTapGesture(perform: toggleReset)
         } else {
             VStack(spacing: 10) {
-                Donut(percent: 0, color: Palette.stale, lineWidth: size / 10).frame(width: size, height: size)
+                Donut(percent: 0, color: Palette.stale, lineWidth: 13).frame(width: 132, height: 132)
                 Text("아직 데이터가 없어요").font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
     }
 
-    private func codexSection(_ c: CodexDisplay, now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Text("Codex").font(.system(size: 14, weight: .medium))
-                if let plan = c.plan { Text(plan).font(.system(size: 11)).foregroundStyle(.secondary) }
-            }
-            if let a = c.active {
-                HStack(spacing: 16) {
-                    ZStack {
-                        Donut(percent: a.percent, color: Palette.color(for: a, stale: c.isStale), lineWidth: 8)
-                        Text("\(Format.percent(a.percent))%").font(.system(size: 18, weight: .medium)).monospacedDigit()
-                    }
-                    .frame(width: 72, height: 72)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(a.name).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
-                        Text(Format.left(until: a.resetsAt, now: now).map { "\($0) 후 리셋" } ?? "리셋됨")
-                            .font(.system(size: 12)).foregroundStyle(.tertiary).monospacedDigit()
-                    }
+    /// 두 번째 섹션용: 도넛 옆에 이름·리셋.
+    @ViewBuilder
+    private func sideHero(_ s: Section, now: Date) -> some View {
+        if let a = s.active {
+            HStack(spacing: 16) {
+                ZStack {
+                    Donut(percent: a.percent, color: Palette.color(for: a, stale: s.stale(a)), lineWidth: 8)
+                    Text("\(Format.percent(a.percent))%").font(.system(size: 18, weight: .medium)).monospacedDigit()
                 }
-            }
-            if !c.others.isEmpty {
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
-                          spacing: 12) {
-                    ForEach(c.others) { small($0, stale: c.isStale, now: now) }
+                .frame(width: 72, height: 72)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(a.name).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
+                    Text(resetText(a, now: now)).font(.system(size: 12)).foregroundStyle(.tertiary).monospacedDigit()
                 }
+                Spacer(minLength: 0)
             }
+            .contentShape(Rectangle()).onTapGesture(perform: toggleReset)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func small(_ r: LimitRow, d: DisplayState, now: Date) -> some View {
-        small(r, stale: d.isStale(r), now: now)
     }
 
     private func small(_ r: LimitRow, stale: Bool, now: Date) -> some View {
@@ -141,10 +208,33 @@ struct PanelView: View {
             .frame(width: 42, height: 42)
             VStack(alignment: .leading, spacing: 1) {
                 Text(r.name).font(.system(size: 12)).lineLimit(1)
-                Text(Format.left(until: r.resetsAt, now: now) ?? "-")
-                    .font(.system(size: 11)).foregroundStyle(.tertiary).monospacedDigit()
+                Text(shortReset(r, now: now)).font(.system(size: 11)).foregroundStyle(.tertiary).monospacedDigit()
             }
         }
+        .contentShape(Rectangle()).onTapGesture(perform: toggleReset)
+    }
+
+    /// 작게 모드: 이름 … 남은 시간 %  + 가로 막대
+    private func bar(_ r: LimitRow, stale: Bool, now: Date) -> some View {
+        let color = Palette.color(for: r, stale: stale)
+        return VStack(spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(r.name).font(.system(size: 12)).lineLimit(1)
+                Spacer(minLength: 4)
+                Text(shortReset(r, now: now)).font(.system(size: 11)).foregroundStyle(.tertiary).monospacedDigit()
+                Text("\(Format.percent(r.percent))%").font(.system(size: 13, weight: .medium)).monospacedDigit()
+                    .frame(minWidth: 36, alignment: .trailing)
+            }
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(color.opacity(0.16))
+                    Capsule().fill(color).frame(width: max(5, g.size.width * r.percent / 100))
+                }
+            }
+            .frame(height: 5)
+            .animation(.easeOut(duration: 0.6), value: r.percent)
+        }
+        .contentShape(Rectangle()).onTapGesture(perform: toggleReset)
     }
 
     private func stat(_ label: String, _ value: Text) -> some View {
@@ -155,8 +245,6 @@ struct PanelView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func stat(_ label: String, _ value: String) -> some View { stat(label, Text(value)) }
-
     private func credit(_ c: Credit?) -> Text {
         guard let c, c.enabled, let used = Format.money(c.used, currency: c.currency) else { return Text("사용 안 함") }
         if let limit = Format.money(c.limit, currency: c.currency) {
@@ -165,18 +253,23 @@ struct PanelView: View {
         return Text(used)
     }
 
-    private var tokenBreakdown: String {
+    private var claudeTokenHelp: String {
         let t = store.tokens
         return "입력 \(Format.tokens(t.input)) · 출력 \(Format.tokens(t.output)) · 캐시 쓰기 \(Format.tokens(t.cacheWrite)) · 캐시 읽기 \(Format.tokens(t.cacheRead)) · 메시지 \(t.messages)건"
     }
 
-    private func footer(_ d: DisplayState, codex: CodexDisplay?, now: Date) -> some View {
-        let (line, warn) = FooterText.make(d, now: now)
+    // MARK: - 맨 아래 줄
+
+    private func footer(now: Date) -> some View {
+        let both = settings.showClaude && settings.showCodex && store.codex != nil
         return VStack(spacing: 3) {
-            footerLine(codex == nil ? line : "Claude " + line, warn: warn)
-            if let codex {
-                let ago = Format.ago(codex.asOf, now: now)
-                footerLine(codex.isStale ? "Codex \(ago) 값 · Codex를 쓰면 갱신돼요" : "Codex \(ago) 사용", warn: codex.isStale)
+            if settings.showClaude {
+                let (line, warn) = FooterText.make(store.display, now: now)
+                footerLine(both ? "Claude " + line : line, warn: warn)
+            }
+            if settings.showCodex, let c = store.codex {
+                let ago = Format.ago(c.asOf, now: now)
+                footerLine(c.isStale ? "Codex \(ago) 값 · Codex를 쓰면 갱신돼요" : "Codex \(ago) 사용", warn: c.isStale)
             }
         }
         .frame(maxWidth: .infinity)
@@ -188,6 +281,10 @@ struct PanelView: View {
             .foregroundStyle(warn ? AnyShapeStyle(Palette.warn) : AnyShapeStyle(.tertiary))
             .multilineTextAlignment(.center)
     }
+}
+
+extension LimitKind {
+    var isCodex: Bool { if case .codex = self { true } else { false } }
 }
 
 enum FooterText {

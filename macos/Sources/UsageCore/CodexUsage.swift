@@ -13,6 +13,13 @@ public struct CodexLimit: Sendable, Equatable {
     public var plan: String?
     public var windows: [Window]
     public var observedAt: Date
+    public var credits: CodexCredits? = nil
+}
+
+public struct CodexCredits: Sendable, Equatable {
+    public var hasCredits: Bool
+    public var unlimited: Bool
+    public var balance: String?
 }
 
 public struct CodexSnapshot: Sendable, Equatable {
@@ -113,8 +120,13 @@ public final class CodexLogReader {
             return CodexLimit.Window(minutes: mins, percent: pct, resetsAt: reset)
         }
         guard !windows.isEmpty else { return nil }   // 창 정보가 없는 기록(premium 등)은 건너뛴다
+        var credits: CodexCredits?
+        if let c = rl["credits"] as? [String: Any] {
+            credits = CodexCredits(hasCredits: c["has_credits"] as? Bool ?? false, unlimited: c["unlimited"] as? Bool ?? false,
+                                   balance: (c["balance"] as? String) ?? (c["balance"] as? NSNumber)?.stringValue)
+        }
         return CodexLimit(id: id, name: rl["limit_name"] as? String, plan: rl["plan_type"] as? String,
-                          windows: windows, observedAt: ts)
+                          windows: windows, observedAt: ts, credits: credits)
     }
 }
 
@@ -125,6 +137,8 @@ public struct CodexDisplay: Sendable, Equatable {
     public var asOf: Date
     /// Codex를 한동안 안 써서 값이 멈춰 있음(회색으로 그린다).
     public var isStale: Bool
+    /// 추가 크레딧이 있을 때만(`has_credits`).
+    public var credits: CodexCredits? = nil
 
     public var active: LimitRow? { rows.max { $0.percent < $1.percent } }
     public var others: [LimitRow] { rows.filter { $0.id != active?.id } }
@@ -146,8 +160,10 @@ public enum CodexResolver {
             }
         }
         guard !rows.isEmpty else { return nil }
-        let plan = (s.limits.first { $0.id == "codex" } ?? s.limits.first)?.plan.map(planLabel)
-        return CodexDisplay(rows: rows, plan: plan, asOf: asOf, isStale: now.timeIntervalSince(asOf) > staleAfter)
+        let main = s.limits.first { $0.id == "codex" } ?? s.limits.first
+        return CodexDisplay(rows: rows, plan: main?.plan.map(planLabel), asOf: asOf,
+                            isStale: now.timeIntervalSince(asOf) > staleAfter,
+                            credits: main?.credits.flatMap { $0.hasCredits || $0.unlimited ? $0 : nil })
     }
 
     static func windowName(_ minutes: Int) -> String {
