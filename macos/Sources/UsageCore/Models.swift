@@ -1,0 +1,73 @@
+import Foundation
+
+/// 한도 종류. 색 규칙(5시간 코랄 / 주간 보라 / 모델별 청록)이 이 값을 따른다.
+public enum LimitKind: Sendable, Equatable, Codable {
+    case session
+    case weekly
+    case model(String)
+}
+
+public struct LimitRow: Sendable, Equatable, Codable, Identifiable {
+    public var id: String
+    public var kind: LimitKind
+    public var name: String
+    public var percent: Double
+    public var resetsAt: Date?
+    public var isActive: Bool
+    public var severity: String?
+
+    public init(kind: LimitKind, name: String, percent: Double, resetsAt: Date?, isActive: Bool, severity: String? = nil) {
+        switch kind {
+        case .session: id = "session"
+        case .weekly: id = "weekly"
+        case .model(let m): id = "model:\(m)"
+        }
+        self.kind = kind
+        self.name = name
+        self.percent = min(max(percent, 0), 100)
+        self.resetsAt = resetsAt
+        self.isActive = isActive
+        self.severity = severity
+    }
+}
+
+/// 추가 사용 크레딧. 금액은 이미 주 단위(달러)로 환산된 값.
+public struct Credit: Sendable, Equatable, Codable {
+    public var enabled: Bool
+    public var used: Double?
+    public var limit: Double?
+    public var currency: String
+    public var percent: Double?
+}
+
+/// API 한 번 성공했을 때의 스냅샷.
+public struct UsageSnapshot: Sendable, Equatable, Codable {
+    public var fiveHour: LimitRow?
+    public var weekly: LimitRow?
+    public var models: [LimitRow]
+    public var credit: Credit?
+    public var fetchedAt: Date
+
+    public var rows: [LimitRow] { [fiveHour, weekly].compactMap { $0 } + models }
+}
+
+public struct TokenTally: Sendable, Equatable, Codable {
+    public var input: Int64 = 0
+    public var output: Int64 = 0
+    public var cacheWrite: Int64 = 0
+    public var cacheRead: Int64 = 0
+    public var messages: Int = 0
+
+    public init() {}
+    public var total: Int64 { input + output + cacheWrite + cacheRead }
+}
+
+public enum FetchStatus: Sendable, Equatable, Codable {
+    case idle
+    case ok
+    case rateLimited(until: Date)
+    case tokenExpired
+    case noCredential
+    case auth
+    case error(String)
+}

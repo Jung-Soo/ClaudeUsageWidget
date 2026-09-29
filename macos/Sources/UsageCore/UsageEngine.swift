@@ -1,0 +1,128 @@
+import Foundation
+
+/// 앱을 다시 켜도 이어받는 상태.
+struct PersistedState: Codable {
+    var policy = FetchPolicy()
+    var status: FetchStatus = .idle
+    var lastAPI: UsageSnapshot?
+    var plan: String?
+}
+
+public struct EngineOutput: Sendable, Equatable {
+    public var display: DisplayState
+    public var tokens: TokenTally
+    public var calledAPI: Bool
+}
+
+public actor UsageEngine {
+    private let credentials: any CredentialProvider
+    private let api: any UsageFetching
+    private let desktop: any DesktopHistoryReading
+    private let scanner: SessionLogScanner
+    private let stateURL: URL?
+    private let clock: @Sendable () -> Date
+    private let log: @Sendable (String) -> Void
+    private var state: PersistedState
+
+    public init(credentials: any CredentialProvider,
+                api: any UsageFetching,
+                desktop: any DesktopHistoryReading,
+                projectsRoot: URL,
+                stateURL: URL?,
+                calendar: Calendar = .current,
+                clock: @escaping @Sendable () -> Date = { Date() },
+                log: @escaping @Sendable (String) -> Void = { _ in }) {
+        self.credentials = credentials
+        self.api = api
+        self.desktop = desktop
+        self.scanner = SessionLogScanner(root: projectsRoot, calendar: calendar)
+        self.stateURL = stateURL
+        self.clock = clock
+        self.log = log
+        if let stateURL, let data = try? Data(contentsOf: stateURL),
+           let s = try? JSONDecoder().decode(PersistedState.self, from: data) {
+            state = s
+        } else {
+            state = PersistedState()
+        }
+    }
+
+    public func tick(force: Bool, interval: TimeInterval) async -> EngineOutput {
+        let now = clock()
+        let tokens = scanner.scan(now: now)
+        var called = false
+
+        if state.policy.shouldCall(now: now, force: force) {
+            state.policy.willCall(now: now, force: force, interval: interval)
+            called = await callAPI(now: now, interval: interval)
+            save()
+        }
+
+        let display = DisplayResolver.resolve(api: state.lastAPI, desktop: desktop.latest(), status: state.status,
+                                              plan: state.plan, now: clock(), interval: interval)
+        return EngineOutput(display: display, tokens: tokens, calledAPI: called)
+    }
+
+    /// 실제로 네트워크 호출을 했으면 true.
+    private func callAPI(now: Date, interval: TimeInterval) async -> Bool {
+        let cred: OAuthCredential?
+        do { cred = try credentials.load() } catch {
+            state.status = .error("credentials: \(error.localizedDescription)")
+            state.policy.failed(now: now, interval: interval)
+            log("[credentials] \(error.localizedDescription)")
+            return false
+        }
+        guard let cred else {
+            state.status = .noCredential
+            state.policy.credentialUnavailable(now: now)
+            return false
+        }
+        state.plan = cred.planLabel ?? state.plan
+        if cred.isExpired(at: now) {
+            if state.status != .tokenExpired { log("[token] CLI access token expired; waiting for Claude Code to refresh it") }
+            state.status = .tokenExpired
+            state.policy.credentialUnavailable(now: now)
+            return false
+        }
+
+        do {
+            let snap = try await api.fetch(token: cred.accessToken, now: now)
+            state.lastAPI = snap
+            state.status = .ok
+            state.policy.succeeded(now: now, interval: interval)
+        } catch let e as UsageAPIError {
+            switch e {
+            case .rateLimited(let ra):
+                state.policy.hitRateLimit(now: now, retryAfter: ra)
+                state.status = .rateLimited(until: state.policy.nextAPI)
+                log("[usage] 429, next try \(state.policy.nextAPI)")
+            case .unauthorized(let code):
+                state.status = .auth
+                state.policy.failed(now: now, interval: interval)
+                log("[usage] HTTP \(code)")
+            case .http(let code, let body):
+                state.status = .error("HTTP \(code)")
+                state.policy.failed(now: now, interval: interval)
+                log("[usage] HTTP \(code) \(body)")
+            case .decoding(let m):
+                state.status = .error("응답 형식 변경")
+                state.policy.failed(now: now, interval: interval)
+                log("[usage] decoding \(m)")
+            case .network(let m):
+                state.status = .error("네트워크")
+                state.policy.failed(now: now, interval: interval)
+                log("[usage] network \(m)")
+            }
+        } catch {
+            state.status = .error(error.localizedDescription)
+            state.policy.failed(now: now, interval: interval)
+        }
+        return true
+    }
+
+    private func save() {
+        guard let stateURL, let data = try? JSONEncoder().encode(state) else { return }
+        try? FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: stateURL, options: .atomic)
+    }
+}
