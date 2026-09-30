@@ -64,8 +64,17 @@ struct PanelView: View {
         return Section(title: "Claude", plan: apiKey ? "API 키" : d.plan, dot: Palette.statusDot(d.status), rows: d.rows,
                        active: d.active, stale: { d.isStale($0) },
                        stats: apiKey ? [tokens] : [("크레딧", credit(d.credit), nil), tokens],
-                       note: FooterText.make(d, now: now),
+                       note: claudeNote(d, now: now),
                        emptyText: apiKey ? "API 키로 쓰는 중이라 5시간·주간 한도가 없어요" : nil)
+    }
+
+    /// 자동 갱신을 켜 둔 경우 토큰 만료 안내를 그 상태에 맞게 바꾼다.
+    private func claudeNote(_ d: DisplayState, now: Date) -> (String, Bool) {
+        guard settings.autoRefreshClaudeToken, d.status == .tokenExpired else { return FooterText.make(d, now: now) }
+        if let last = store.lastRefresh, last.result != .refreshed {
+            return ("자동 갱신 실패 · \(RefreshText.reason(last.result))", true)
+        }
+        return ("CLI 토큰 만료 · 자동 갱신 중…", false)
     }
 
     private func codexSection(now: Date) -> Section? {
@@ -331,5 +340,21 @@ enum FooterText {
         }
         if let ago { return (stale ? "\(ago) 값" : "\(ago) 갱신", stale) }
         return ("불러오는 중…", false)
+    }
+}
+
+enum RefreshText {
+    static func reason(_ r: RefreshResult) -> String {
+        switch r {
+        case .refreshed: "성공"
+        case .cliNotFound: "claude CLI를 찾지 못했어요"
+        case .failed(let m): "CLI 실행 실패(\(m)) · 터미널에서 claude 로그인 확인"
+        }
+    }
+
+    static func describe(_ a: RefreshAttempt) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "M/d HH:mm"
+        return "\(f.string(from: a.at)) \(reason(a.result))"
     }
 }

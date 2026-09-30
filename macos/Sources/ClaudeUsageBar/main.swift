@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = AppSettings()
         let store = UsageStore.live(settings: settings)
         let notifier = self.notifier
-        let settingsWindow = SettingsWindowController(settings: settings, onTestAlert: {
+        let settingsWindow = SettingsWindowController(settings: settings, store: store, onTestAlert: {
             Task { await notifier.post(AlertEvent(kind: .danger, title: "5시간 한도 95%",
                                                   body: "알림 테스트예요 · 실제 한도가 이 정도면 이렇게 알려 드려요.")) }
         })
@@ -52,6 +52,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 let args = CommandLine.arguments
+// 점검용: 자동 갱신과 같은 조건으로 CLI를 한 번 실행해 결과를 출력한다(약 500토큰)
+if args.contains("--test-refresh") {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    print("CLI:", ClaudeCLIRefresher.findCLI(home: home) ?? "찾지 못함")
+    Task {
+        let r = await ClaudeCLIRefresher(home: home, workDir: AppLog.dataDir.appendingPathComponent("cli-refresh")).refresh()
+        print("결과:", r)
+        exit(r == .refreshed ? 0 : 1)
+    }
+    RunLoop.main.run()
+}
 if let i = args.firstIndex(of: "--snapshot") {
     let dir = URL(fileURLWithPath: i + 1 < args.count ? args[i + 1] : "snapshots")
     Task { @MainActor in

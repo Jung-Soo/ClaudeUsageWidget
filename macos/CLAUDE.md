@@ -9,6 +9,7 @@ Claude Code 구독 플랜 사용량(5시간 / 주간 / 모델별 주간 한도, 
 scripts/build-app.sh --run      # release 빌드 → ~/Applications/ClaudeUsageBar.app 설치 후 실행(기존 인스턴스 종료)
 swift test                      # 단위 테스트 (UsageCore)
 swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이터로 패널·메뉴바·설정 PNG(state.json 복사본 사용, API 호출 안 함)
+.build/debug/ClaudeUsageBar --test-refresh                      # 자동 갱신과 같은 조건으로 CLI 실행 점검(약 500토큰)
 ```
 
 - 요구: macOS 14+, Swift 6 툴체인(Xcode 16+ 또는 Command Line Tools 16+). `swift --version`으로 확인하고 없으면 `xcode-select --install` 안내
@@ -34,14 +35,14 @@ swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이
 
 ## 지켜야 할 원칙
 
-- **토큰은 읽기만 한다.** 앱이 refresh token으로 갱신하거나 키체인에 다시 쓰지 않는다(Claude Code 로그인이 풀릴 수 있음). 만료되면 사용자가 터미널에서 `claude`를 실행하면 CLI가 스스로 갱신한다
+- **토큰은 읽기만 한다.** 앱이 refresh token으로 갱신하거나 키체인에 다시 쓰지 않는다(Claude Code 로그인이 풀릴 수 있음). 만료되면 CLI가 스스로 갱신하게 한다: 사용자가 터미널에서 `claude`를 실행하거나, 설정의 "CLI 토큰 자동 갱신"(기본 꺼짐)을 켜면 앱이 `CLIRefresher.swift`로 CLI를 짧게 실행(Haiku·짧은 시스템 프롬프트·도구/MCP 끔·세션 저장 안 함, 약 500토큰, 실패 시 30분 간격). `claude auth status`로는 갱신되지 않는다(확인함)
 - 토큰 값을 출력·로그·커밋에 남기지 않는다. 디버깅할 때도 `security ... -w` 결과를 그대로 출력하지 말고 구조만 확인한다(`Redact.secrets` 참고)
 - 사용량 API는 2분보다 자주 호출하지 않는다(429 유발)
 - 색은 그래프(도넛)에만 쓴다: 5시간 코랄 `#D85A30`, 주간 보라 `#7F77DD`, 모델별 청록 `#1D9E75`, Codex 전체 파랑 `#378ADD`, 70%+ 주황, 90%+ 빨강, 최신 아님 회색
 
 ## 문제 진단 순서
 
-1. `~/Library/Application Support/ClaudeUsageBar/app.log` (최근 200줄, 토큰 마스킹됨)
+1. `~/Library/Application Support/ClaudeUsageBar/app.log` (최근 200줄, 토큰 마스킹됨). `[token] auto refresh`, `[desktop] 새 기록`(데스크톱 앱이 기록을 남긴 시각) 줄 참고
 2. `state.json`의 `status`, `policy.nextAPI`(429 대기 중인지), `lastAPI.fetchedAt`
 3. 키체인 토큰 만료 여부(값은 출력하지 말 것):
    `security find-generic-password -s "Claude Code-credentials" -w | python3 -c 'import json,sys,time;o=json.load(sys.stdin)["claudeAiOauth"];print("%.0f min left"%((o["expiresAt"]/1000-time.time())/60))'`

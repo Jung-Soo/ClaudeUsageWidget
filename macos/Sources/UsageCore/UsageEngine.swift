@@ -18,6 +18,13 @@ public struct EngineOutput: Sendable, Equatable {
     public var codexTokens: CodexTokenTally?
     /// Codex를 API 키로 쓰는 중(구독 한도 없음).
     public var codexAPIKey = false
+    /// 마지막 자동 토큰 갱신 시도(시각, 결과). 설정 화면에 보여 준다.
+    public var lastRefresh: RefreshAttempt?
+}
+
+public struct RefreshAttempt: Sendable, Equatable {
+    public var at: Date
+    public var result: RefreshResult
 }
 
 public actor UsageEngine {
@@ -34,6 +41,12 @@ public actor UsageEngine {
     static let reliefThreshold: UInt64 = 32 << 20
     /// 끄면 사용량 API를 부르지 않는다(스냅샷 모드).
     private let allowNetwork: Bool
+    private let refresher: (any TokenRefreshing)?
+    /// 실패가 반복돼도(예: CLI 로그아웃) 30분에 한 번만 시도한다.
+    static let refreshRetry: TimeInterval = 1800
+    private var lastRefresh: RefreshAttempt?
+    /// 데스크톱 앱 기록이 언제 쌓이는지 관찰용(새 기록이 생기면 로그).
+    private var lastDesktopSample: Date?
     private let claudeAPIKeyHint: @Sendable () -> Bool
     private let codexAPIKeyHint: @Sendable () -> Bool
     private let stateURL: URL?
@@ -49,11 +62,13 @@ public actor UsageEngine {
                 stateURL: URL?,
                 calendar: Calendar = .current,
                 allowNetwork: Bool = true,
+                refresher: (any TokenRefreshing)? = nil,
                 claudeAPIKeyHint: @escaping @Sendable () -> Bool = { false },
                 codexAPIKeyHint: @escaping @Sendable () -> Bool = { false },
                 clock: @escaping @Sendable () -> Date = { Date() },
                 log: @escaping @Sendable (String) -> Void = { _ in }) {
         self.allowNetwork = allowNetwork
+        self.refresher = refresher
         self.claudeAPIKeyHint = claudeAPIKeyHint
         self.codexAPIKeyHint = codexAPIKeyHint
         self.credentials = credentials
@@ -75,7 +90,9 @@ public actor UsageEngine {
 
     /// - claude: 끄면 키체인·API·Claude 로그를 전혀 건드리지 않는다
     /// - codex: 끄면 Codex 로그를 읽지 않는다
-    public func tick(force: Bool, interval: TimeInterval, claude: Bool = true, codex: Bool = true) async -> EngineOutput {
+    /// - autoRefresh: CLI 토큰이 만료됐으면 CLI를 짧게 실행해 갱신을 시도한다(설정에서 켤 때만)
+    public func tick(force: Bool, interval: TimeInterval, claude: Bool = true, codex: Bool = true,
+                     autoRefresh: Bool = false) async -> EngineOutput {
         let now = clock()
         var tokens = TokenTally()
         var called = false
@@ -83,7 +100,7 @@ public actor UsageEngine {
             tokens = scanner.scan(now: now)
             if allowNetwork, state.policy.shouldCall(now: now, force: force) {
                 state.policy.willCall(now: now, force: force, interval: interval)
-                called = await callAPI(now: now, interval: interval)
+                called = await callAPI(now: now, interval: interval, autoRefresh: autoRefresh)
                 save()
             }
         }
@@ -91,7 +108,9 @@ public actor UsageEngine {
         let later = clock()
         var display = DisplayState()
         if claude {
-            display = DisplayResolver.resolve(api: state.lastAPI, desktopSamples: desktop.samples(), status: state.status,
+            let samples = desktop.samples()
+            noteDesktopSample(samples)
+            display = DisplayResolver.resolve(api: state.lastAPI, desktopSamples: samples, status: state.status,
                                               plan: state.plan, now: later, interval: interval)
         }
         var codexDisplay: CodexDisplay?
@@ -117,7 +136,7 @@ public actor UsageEngine {
         }
         if bytesRead >= Self.reliefThreshold { malloc_zone_pressure_relief(nil, 0) }
         return EngineOutput(display: display, tokens: tokens, calledAPI: called, codex: codexDisplay,
-                            codexTokens: codexTokens, codexAPIKey: codexAPIKey)
+                            codexTokens: codexTokens, codexAPIKey: codexAPIKey, lastRefresh: lastRefresh)
     }
 
     /// 한도 값(창·%·리셋)이 바뀌었거나 기록 시각이 10분 넘게 달라졌을 때만 저장한다(Codex 사용 중 매 틱 쓰기 방지).
@@ -132,21 +151,37 @@ public actor UsageEngine {
     }
 
     /// 실제로 네트워크 호출을 했으면 true.
-    private func callAPI(now: Date, interval: TimeInterval) async -> Bool {
-        let cred: OAuthCredential?
-        do { cred = try credentials.load() } catch {
+    /// 데스크톱 앱이 기록 파일에 새 표본을 남기면 로그에 적는다(언제 기록하는지 관찰용).
+    private func noteDesktopSample(_ samples: [DesktopSample]) {
+        guard let latest = samples.max(by: { $0.t < $1.t }), latest.t != lastDesktopSample else { return }
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        log("[desktop] \(lastDesktopSample == nil ? "마지막 기록" : "새 기록") \(f.string(from: latest.t)) 5h=\(latest.fiveHour.map { "\(Int($0))" } ?? "-") week=\(latest.weekly.map { "\(Int($0))" } ?? "-")")
+        lastDesktopSample = latest.t
+    }
+
+    private func callAPI(now: Date, interval: TimeInterval, autoRefresh: Bool) async -> Bool {
+        let loaded: OAuthCredential?
+        do { loaded = try credentials.load() } catch {
             state.status = .error("credentials: \(error.localizedDescription)")
             state.policy.failed(now: now, interval: interval)
             log("[credentials] \(error.localizedDescription)")
             return false
         }
-        guard let cred else {
+        guard var cred = loaded else {
             state.status = claudeAPIKeyHint() ? .apiKeyOnly : .noCredential
             state.policy.credentialUnavailable(now: now)
             return false
         }
         state.plan = cred.planLabel ?? state.plan
-        if cred.isExpired(at: now) {
+        if cred.isExpired(at: now), autoRefresh, let refresher,
+           now.timeIntervalSince(lastRefresh?.at ?? .distantPast) >= Self.refreshRetry {
+            let result = await refresher.refresh()
+            lastRefresh = RefreshAttempt(at: now, result: result)
+            log("[token] auto refresh via CLI: \(result)")
+            if result == .refreshed, let fresh = try? credentials.load() { cred = fresh }
+        }
+        if cred.isExpired(at: clock()) {
             if state.status != .tokenExpired { log("[token] CLI access token expired; waiting for Claude Code to refresh it") }
             state.status = .tokenExpired
             state.policy.credentialUnavailable(now: now)

@@ -10,6 +10,7 @@ final class UsageStore {
     private(set) var codex: CodexDisplay?
     private(set) var codexTokens: CodexTokenTally?
     private(set) var codexAPIKey = false
+    private(set) var lastRefresh: RefreshAttempt?
     /// 수동 갱신 표시. 겹친 틱이 먼저 끝나도 꺼지지 않도록 진행 중인 수동 갱신 수로 판단한다.
     private var forcedInFlight = 0
     private var ticking = 0
@@ -56,6 +57,7 @@ final class UsageStore {
             codexSessionsRoot: codexHome.appendingPathComponent("sessions"),
             stateURL: stateURL,
             allowNetwork: !offline,
+            refresher: offline ? nil : ClaudeCLIRefresher(home: home, workDir: AppLog.dataDir.appendingPathComponent("cli-refresh")),
             claudeAPIKeyHint: { AuthHints.claudeUsesAPIKey(claudeJSON: claudeJSON) },
             codexAPIKeyHint: { AuthHints.codexUsesAPIKey(authJSON: codexHome.appendingPathComponent("auth.json")) },
             log: { if !offline { AppLog.write($0) } })
@@ -84,12 +86,14 @@ final class UsageStore {
             if force { forcedInFlight -= 1 }
         }
         let out = await engine.tick(force: force, interval: settings.interval,
-                                    claude: settings.showClaude, codex: settings.showCodex)
+                                    claude: settings.showClaude, codex: settings.showCodex,
+                                    autoRefresh: settings.autoRefreshClaudeToken)
         display = out.display
         tokens = out.tokens
         codex = out.codex
         codexTokens = out.codexTokens
         codexAPIKey = out.codexAPIKey
+        lastRefresh = out.lastRefresh
         evaluateAlerts()
         onChange?()
     }

@@ -34,6 +34,8 @@ final class AppSettings {
     var compactPanel: Bool { didSet { defaults.set(compactPanel, forKey: "compactPanel") } }
     /// 남은 시간 대신 리셋 시각을 보여 준다(도넛·막대 클릭으로 전환).
     var showAbsoluteReset: Bool { didSet { defaults.set(showAbsoluteReset, forKey: "showAbsoluteReset") } }
+    /// CLI 토큰이 만료되면 CLI를 짧게 실행해 갱신(기본 꺼짐, 갱신마다 약 500토큰).
+    var autoRefreshClaudeToken: Bool { didSet { defaults.set(autoRefreshClaudeToken, forKey: "autoRefreshClaudeToken") } }
     var alerts: AlertSettings {
         didSet { if let d = try? JSONEncoder().encode(alerts) { defaults.set(d, forKey: "alerts") } }
     }
@@ -53,6 +55,7 @@ final class AppSettings {
         showCodex = codex
         compactPanel = defaults.bool(forKey: "compactPanel")
         showAbsoluteReset = defaults.bool(forKey: "showAbsoluteReset")
+        autoRefreshClaudeToken = defaults.bool(forKey: "autoRefreshClaudeToken")
         alerts = defaults.data(forKey: "alerts").flatMap { try? JSONDecoder().decode(AlertSettings.self, from: $0) } ?? AlertSettings()
     }
 
