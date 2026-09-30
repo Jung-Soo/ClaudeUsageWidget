@@ -71,6 +71,27 @@ final class RefreshableCredentials: CredentialProvider, TokenRefreshing, @unchec
         #expect(c.refreshCalls == 0)
     }
 
+    /// 점검 모드: 토큰이 유효해도 한 번 만료된 것처럼 처리해 자동 갱신 흐름 전체를 돈다.
+    @Test func simulatedExpiryRunsTheWholeFlow() async {
+        let c = RefreshableCredentials(expiredAt: t0 + 3600, freshUntil: t0 + 8 * 3600, result: .refreshed)
+        let api = StubAPI(.success(UsageSnapshot(fiveHour: nil, weekly: nil, models: [], credit: nil, fetchedAt: t0)))
+        let out = await engine(c, api: api, clock: MutableClock(t0))
+            .tick(force: true, interval: 180, codex: false, autoRefresh: true, simulateExpired: true)
+        #expect(c.refreshCalls == 1)
+        #expect(api.calls == 1)
+        #expect(out.display.status == .ok)
+    }
+
+    @Test func simulatedExpiryWithAutoRefreshOffShowsExpired() async {
+        let c = RefreshableCredentials(expiredAt: t0 + 3600, freshUntil: t0 + 8 * 3600, result: .refreshed)
+        let api = StubAPI(.failure(.network("x")))
+        let out = await engine(c, api: api, clock: MutableClock(t0))
+            .tick(force: true, interval: 180, codex: false, autoRefresh: false, simulateExpired: true)
+        #expect(c.refreshCalls == 0)
+        #expect(api.calls == 0)
+        #expect(out.display.status == .tokenExpired)
+    }
+
     @Test func findsCLIInCommonLocations() throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("home-\(UUID().uuidString)")
         #expect(ClaudeCLIRefresher.findCLI(home: home) == nil || !ClaudeCLIRefresher.findCLI(home: home)!.hasPrefix(home.path))

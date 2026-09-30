@@ -11,6 +11,8 @@ final class UsageStore {
     private(set) var codexTokens: CodexTokenTally?
     private(set) var codexAPIKey = false
     private(set) var lastRefresh: RefreshAttempt?
+    /// 점검용(`--simulate-expired-token`): 다음 API 확인 한 번만 토큰이 만료된 것처럼 처리한다.
+    var simulateExpiredOnce = false
     /// 수동 갱신 표시. 겹친 틱이 먼저 끝나도 꺼지지 않도록 진행 중인 수동 갱신 수로 판단한다.
     private var forcedInFlight = 0
     private var ticking = 0
@@ -78,6 +80,7 @@ final class UsageStore {
 
     /// 수동 갱신이 아니면, 이미 진행 중인 틱이 있을 때 건너뛴다(주기 틱·패널 열기·설정 변경이 겹치는 경우).
     func refresh(force: Bool) async {
+        var force = force
         if !force && ticking > 0 { return }
         ticking += 1
         if force { forcedInFlight += 1 }
@@ -85,9 +88,11 @@ final class UsageStore {
             ticking -= 1
             if force { forcedInFlight -= 1 }
         }
+        let simulate = simulateExpiredOnce
+        if simulate { force = true; simulateExpiredOnce = false }
         let out = await engine.tick(force: force, interval: settings.interval,
                                     claude: settings.showClaude, codex: settings.showCodex,
-                                    autoRefresh: settings.autoRefreshClaudeToken)
+                                    autoRefresh: settings.autoRefreshClaudeToken, simulateExpired: simulate)
         display = out.display
         tokens = out.tokens
         codex = out.codex

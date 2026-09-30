@@ -91,8 +91,9 @@ public actor UsageEngine {
     /// - claude: 끄면 키체인·API·Claude 로그를 전혀 건드리지 않는다
     /// - codex: 끄면 Codex 로그를 읽지 않는다
     /// - autoRefresh: CLI 토큰이 만료됐으면 CLI를 짧게 실행해 갱신을 시도한다(설정에서 켤 때만)
+    /// - simulateExpired: 점검용. 이번 API 확인에서 토큰이 만료된 것처럼 처리한다(자동 갱신 흐름을 기다리지 않고 확인)
     public func tick(force: Bool, interval: TimeInterval, claude: Bool = true, codex: Bool = true,
-                     autoRefresh: Bool = false) async -> EngineOutput {
+                     autoRefresh: Bool = false, simulateExpired: Bool = false) async -> EngineOutput {
         let now = clock()
         var tokens = TokenTally()
         var called = false
@@ -100,7 +101,7 @@ public actor UsageEngine {
             tokens = scanner.scan(now: now)
             if allowNetwork, state.policy.shouldCall(now: now, force: force) {
                 state.policy.willCall(now: now, force: force, interval: interval)
-                called = await callAPI(now: now, interval: interval, autoRefresh: autoRefresh)
+                called = await callAPI(now: now, interval: interval, autoRefresh: autoRefresh, simulateExpired: simulateExpired)
                 save()
             }
         }
@@ -160,7 +161,7 @@ public actor UsageEngine {
         lastDesktopSample = latest.t
     }
 
-    private func callAPI(now: Date, interval: TimeInterval, autoRefresh: Bool) async -> Bool {
+    private func callAPI(now: Date, interval: TimeInterval, autoRefresh: Bool, simulateExpired: Bool = false) async -> Bool {
         let loaded: OAuthCredential?
         do { loaded = try credentials.load() } catch {
             state.status = .error("credentials: \(error.localizedDescription)")
@@ -174,14 +175,17 @@ public actor UsageEngine {
             return false
         }
         state.plan = cred.planLabel ?? state.plan
-        if cred.isExpired(at: now), autoRefresh, let refresher,
-           now.timeIntervalSince(lastRefresh?.at ?? .distantPast) >= Self.refreshRetry {
+        var expired = cred.isExpired(at: now) || simulateExpired
+        if simulateExpired { log("[token] simulated expiry (check mode)") }
+        if expired, autoRefresh, let refresher,
+           simulateExpired || now.timeIntervalSince(lastRefresh?.at ?? .distantPast) >= Self.refreshRetry {
             let result = await refresher.refresh()
             lastRefresh = RefreshAttempt(at: now, result: result)
             log("[token] auto refresh via CLI: \(result)")
             if result == .refreshed, let fresh = try? credentials.load() { cred = fresh }
+            expired = cred.isExpired(at: clock()) || (simulateExpired && result != .refreshed)
         }
-        if cred.isExpired(at: clock()) {
+        if expired {
             if state.status != .tokenExpired { log("[token] CLI access token expired; waiting for Claude Code to refresh it") }
             state.status = .tokenExpired
             state.policy.credentialUnavailable(now: now)

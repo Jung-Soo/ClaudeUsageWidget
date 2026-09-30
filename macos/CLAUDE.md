@@ -10,6 +10,7 @@ scripts/build-app.sh --run      # release 빌드 → ~/Applications/ClaudeUsageB
 swift test                      # 단위 테스트 (UsageCore)
 swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이터로 패널·메뉴바·설정 PNG(state.json 복사본 사용, API 호출 안 함)
 .build/debug/ClaudeUsageBar --test-refresh                      # 자동 갱신과 같은 조건으로 CLI 실행 점검(약 500토큰)
+open ~/Applications/ClaudeUsageBar.app --args --simulate-expired-token   # 실제 앱에서 토큰 만료를 한 번 흉내 내 자동 갱신 흐름 전체 점검(설정에서 자동 갱신이 켜져 있어야 CLI 실행)
 ```
 
 - 요구: macOS 14+, Swift 6 툴체인(Xcode 16+ 또는 Command Line Tools 16+). `swift --version`으로 확인하고 없으면 `xcode-select --install` 안내

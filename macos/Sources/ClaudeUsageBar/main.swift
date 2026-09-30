@@ -35,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.status = status
         self.settingsWindow = settingsWindow
         AppLog.write("[app] started")
+        if CommandLine.arguments.contains("--simulate-expired-token") {
+            AppLog.write("[app] check mode: simulate expired CLI token once (auto refresh \(settings.autoRefreshClaudeToken ? "on" : "off"))")
+            store.simulateExpiredOnce = true
+        }
         store.start()
     }
 
