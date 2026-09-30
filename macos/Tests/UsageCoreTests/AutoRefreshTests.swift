@@ -64,6 +64,32 @@ final class RefreshableCredentials: CredentialProvider, TokenRefreshing, @unchec
         #expect(c.refreshCalls == 2)
     }
 
+    /// 일시적 실패(네트워크 등)는 2분 → 4분 → 8분… 으로 빨리 다시 시도한다.
+    @Test func transientFailuresBackOffFromTwoMinutes() async {
+        let c = RefreshableCredentials(expiredAt: t0 - 60, freshUntil: t0 + 8 * 3600, result: .failed("exit 1"))
+        let clock = MutableClock(t0)
+        let e = engine(c, api: StubAPI(.failure(.network("x"))), clock: clock)
+        _ = await e.tick(force: false, interval: 180, codex: false, autoRefresh: true)       // 1회 실패
+        clock.now = t0 + 60
+        _ = await e.tick(force: false, interval: 180, codex: false, autoRefresh: true)
+        #expect(c.refreshCalls == 1)
+        clock.now = t0 + 120
+        _ = await e.tick(force: false, interval: 180, codex: false, autoRefresh: true)       // 2분 뒤 2회
+        #expect(c.refreshCalls == 2)
+        c.result = .refreshed
+        clock.now = t0 + 120 + 240                                                            // 4분 뒤 3회 → 성공
+        let out = await e.tick(force: false, interval: 180, codex: false, autoRefresh: true)
+        #expect(c.refreshCalls == 3)
+        #expect(out.lastRefresh?.result == .refreshed)
+    }
+
+    @Test func retryWaits() {
+        #expect(UsageEngine.refreshWait(after: .failed("x"), failures: 1) == 120)
+        #expect(UsageEngine.refreshWait(after: .failed("x"), failures: 3) == 480)
+        #expect(UsageEngine.refreshWait(after: .failed("x"), failures: 10) == 1800)
+        #expect(UsageEngine.refreshWait(after: .cliNotFound, failures: 1) == 1800)
+    }
+
     @Test func validTokenNeverRefreshes() async {
         let c = RefreshableCredentials(expiredAt: t0 + 3600, freshUntil: t0 + 8 * 3600, result: .refreshed)
         let api = StubAPI(.success(UsageSnapshot(fiveHour: nil, weekly: nil, models: [], credit: nil, fetchedAt: t0)))

@@ -42,9 +42,20 @@ public actor UsageEngine {
     /// 끄면 사용량 API를 부르지 않는다(스냅샷 모드).
     private let allowNetwork: Bool
     private let refresher: (any TokenRefreshing)?
-    /// 실패가 반복돼도(예: CLI 로그아웃) 30분에 한 번만 시도한다.
+    /// 다시 시도 간격. 일시적 실패(부팅·깨어난 직후 네트워크 등)는 2분부터 두 배씩, 최대 30분.
+    /// CLI를 못 찾은 경우처럼 저절로 풀리지 않는 실패는 바로 30분.
     static let refreshRetry: TimeInterval = 1800
+    static let refreshFirstRetry: TimeInterval = 120
     private var lastRefresh: RefreshAttempt?
+    private var refreshFailures = 0
+
+    static func refreshWait(after result: RefreshResult?, failures: Int) -> TimeInterval {
+        switch result {
+        case nil, .refreshed?: return 0
+        case .cliNotFound?: return refreshRetry
+        case .failed?: return min(refreshRetry, refreshFirstRetry * pow(2, Double(max(0, failures - 1))))
+        }
+    }
     /// 데스크톱 앱 기록이 언제 쌓이는지 관찰용(새 기록이 생기면 로그).
     private var lastDesktopSample: Date?
     private let claudeAPIKeyHint: @Sendable () -> Bool
@@ -178,9 +189,11 @@ public actor UsageEngine {
         var expired = cred.isExpired(at: now) || simulateExpired
         if simulateExpired { log("[token] simulated expiry (check mode)") }
         if expired, autoRefresh, let refresher,
-           simulateExpired || now.timeIntervalSince(lastRefresh?.at ?? .distantPast) >= Self.refreshRetry {
+           simulateExpired || now.timeIntervalSince(lastRefresh?.at ?? .distantPast)
+                >= Self.refreshWait(after: lastRefresh?.result, failures: refreshFailures) {
             let result = await refresher.refresh()
             lastRefresh = RefreshAttempt(at: now, result: result)
+            refreshFailures = result == .refreshed ? 0 : refreshFailures + 1
             log("[token] auto refresh via CLI: \(result)")
             if result == .refreshed, let fresh = try? credentials.load() { cred = fresh }
             expired = cred.isExpired(at: clock()) || (simulateExpired && result != .refreshed)

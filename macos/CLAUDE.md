@@ -36,7 +36,7 @@ open ~/Applications/ClaudeUsageBar.app --args --simulate-expired-token   # 실�
 
 ## 지켜야 할 원칙
 
-- **토큰은 읽기만 한다.** 앱이 refresh token으로 갱신하거나 키체인에 다시 쓰지 않는다(Claude Code 로그인이 풀릴 수 있음). 만료되면 CLI가 스스로 갱신하게 한다: 사용자가 터미널에서 `claude`를 실행하거나, 설정의 "CLI 토큰 자동 갱신"(기본 꺼짐)을 켜면 앱이 `CLIRefresher.swift`로 CLI를 짧게 실행(Haiku·짧은 시스템 프롬프트·도구/MCP 끔·세션 저장 안 함, 약 500토큰, 실패 시 30분 간격). `claude auth status`로는 갱신되지 않는다(확인함)
+- **토큰은 읽기만 한다.** 앱이 refresh token으로 갱신하거나 키체인에 다시 쓰지 않는다(Claude Code 로그인이 풀릴 수 있음). 만료되면 CLI가 스스로 갱신하게 한다: 사용자가 터미널에서 `claude`를 실행하거나, 설정의 "CLI 토큰 자동 갱신"(기본 꺼짐)을 켜면 앱이 `CLIRefresher.swift`로 CLI를 짧게 실행(Haiku·짧은 시스템 프롬프트·도구/MCP 끔·세션 저장 안 함, 약 500토큰, 일시적 실패는 2분부터 두 배씩 최대 30분·CLI 없음은 30분 간격). `claude auth status`로는 갱신되지 않는다(확인함)
 - 토큰 값을 출력·로그·커밋에 남기지 않는다. 디버깅할 때도 `security ... -w` 결과를 그대로 출력하지 말고 구조만 확인한다(`Redact.secrets` 참고)
 - 사용량 API는 2분보다 자주 호출하지 않는다(429 유발)
 - 색은 그래프(도넛)에만 쓴다: 5시간 코랄 `#D85A30`, 주간 보라 `#7F77DD`, 모델별 청록 `#1D9E75`, Codex 전체 파랑 `#378ADD`, 70%+ 주황, 90%+ 빨강, 최신 아님 회색
