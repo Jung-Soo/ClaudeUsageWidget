@@ -1,2 +1,2 @@
-installer/*.exe
-installer/*.res
+windows/installer/*.exe
+windows/installer/*.res

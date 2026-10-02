@@ -1,78 +1,50 @@
-# ClaudeUsageWidget
+# Claude Usage Widget
 
-Claude Code 플랜 사용량을 바탕화면에 띄워 두는 Windows용 미니 위젯입니다.
+Claude Code 구독 플랜 사용량(5시간 · 주간 · 모델별 한도)을 늘 보이는 곳에 띄워 두는 작은 도구입니다. **Windows**와 **macOS**를 지원하고, macOS 버전은 **Codex** 사용량도 함께 보여 줍니다.
 
-> **macOS**: 메뉴바 버전은 [`macos/`](macos/README.md)에 있습니다. 설치는 [macos/docs/GUIDE.md](macos/docs/GUIDE.md)를 참고하세요.
+<img src="macos/docs/images/menubar-combined-light.png" width="220"><br>
+<img src="macos/docs/images/panel-light.png" width="260"> <img src="macos/docs/images/panel-compact-dark.png" width="260">
 
-- 카드: 주간 한도 큰 링 + 리셋까지 남은 시간, 5시간 / 사용률이 가장 높은 모델 주간 한도 작은 링 (사용률에 따라 색이 주황 → 빨강)
-- 플랜 표시 (예: Team · Max 5x), 마지막 갱신 시각
-- 추가 사용 크레딧(이번 달 사용액, 월 한도가 있으면 `/ 한도`)
-- 오늘 사용한 토큰 합계 (로컬 세션 로그 집계)
-- 작업표시줄 요약: 트레이 왼쪽에 `5시간 · 주간 · 모델` 사용률 숫자 표시
-- 작은 모드: 도넛 대신 한도별 가로 막대 한 줄씩 (우클릭 → 크기 → 작게)
-- 알림: 85% 경고, 95% 위험(위젯 앞으로 + 깜빡임), 100% 도달, 사용 속도 예측, 크레딧 사용 시작
-- 라이트/다크 테마, 바탕화면 고정 / 일반 창 / 항상 위, 트레이 아이콘
+## 플랫폼
 
-## 요구 사항
-
-- Windows 10 1809 이상 또는 Windows 11 (추가 설치 없음: Windows PowerShell 5.1 + .NET WinForms 사용)
-- Claude Code CLI에 **구독 계정**(Pro / Max / Team / Enterprise)으로 로그인되어 있을 것
-  - `%USERPROFILE%\.claude\.credentials.json` 의 OAuth 토큰으로 한도를 조회합니다
-  - API 키 전용 사용자는 한도가 표시되지 않습니다 (오늘 토큰은 표시됨)
-
-## 설치
-
-[Releases](../../releases)에서 `ClaudeUsageWidget-Setup-x.y.z.zip` (또는 `.exe`)을 받아 압축을 풀고 `ClaudeUsageWidget-Setup-x.y.z.exe` 를 실행합니다.
-
-- 관리자 권한 불필요, 현재 사용자에게만 설치 (`%LOCALAPPDATA%\Programs\ClaudeUsageWidget`)
-- 시작 메뉴 바로가기, 선택 시 로그인 자동 실행
-- 제거: 설정 → 앱 → Claude Usage Widget
-- 코드 서명이 없어 처음 실행 시 SmartScreen 경고가 뜰 수 있습니다 (추가 정보 → 실행)
-- 백신이 머신러닝 기반으로 오탐할 수 있습니다 (예: Defender `Trojan:Win32/Wacatac.C!ml`). 아래 「주의」 참고
-
-## 사용법
-
-- 드래그로 이동, ⟳ 로 즉시 갱신, `…` 로 메뉴 열기, 링 클릭으로 남은 시간 ↔ 리셋 시각 전환
-- 작업표시줄 숫자: 마우스를 올리면 항목 설명, 클릭하면 카드 열기, 우클릭하면 메뉴
-- 우클릭 메뉴: 테마, 크기(기본/작게), 표시 방식, 한도 조회 주기(2/3/5/10분), 알림 설정, 투명도, 작업표시줄 요약 표시, 자동 실행, 오류 로그
-- 작업표시줄 요약은 트레이 옆에 작은 창을 겹쳐 띄우는 방식이라 전체화면 앱·발표 중에는 숨고, 세로 작업표시줄은 지원하지 않습니다
-
-## 동작 방식
-
-| 항목 | 출처 | 주기 |
+| | Windows | macOS |
 |---|---|---|
-| 한도·크레딧 | `GET https://api.anthropic.com/api/oauth/usage` (비공식, Claude Code `/usage` 와 동일) | 기본 3분 |
-| 오늘 토큰 | `%USERPROFILE%\.claude\projects\**\*.jsonl` 증분 읽기 (새 줄만) | 10초 |
+| 형태 | 바탕화면 카드 위젯 + 작업표시줄 요약 | 메뉴바 항목 + 드롭다운 패널 |
+| 보여 주는 서비스 | Claude Code | Claude Code, Codex(ChatGPT 앱·CLI·VS Code 확장) |
+| 구현 | Windows PowerShell 5.1 + WinForms (추가 설치 없음) | Swift / SwiftUI, macOS 14 이상 |
+| 설치 | 원본 저장소 [Releases](https://github.com/hideface/ClaudeUsageWidget/releases)의 설치 파일 | 공유받은 zip, 또는 소스에서 빌드 |
+| 문서 | [windows/README.md](windows/README.md) | [macos/README.md](macos/README.md) · [설치·사용 가이드](macos/docs/GUIDE.md) |
 
-- 429(호출 제한) 시 5 → 10 → 20 → 30분으로 대기 시간을 늘리며, 대기 중에는 수동 갱신·재시작도 호출하지 않습니다.
-- 액세스 토큰이 만료되면 refresh token으로 갱신해 `.credentials.json` 에 다시 저장합니다 (처음 한 번 `.credentials.json.widget-bak` 백업). 메뉴에서 끌 수 있습니다.
-- 위젯 데이터: `%LOCALAPPDATA%\ClaudeUsageWidget` (`usage.txt`, `usage-raw.json`, `fetch.log`(최근 200줄), `settings.json`)
-- `ClaudeUsageWidget.exe` 는 PowerShell을 콘솔 없이(`CREATE_NO_WINDOW`) 띄우는 48KB 런처입니다. Windows Terminal이 기본 터미널이어도 창이 생기지 않습니다.
+## 공통 기능
+
+- 5시간 · 주간 · 모델별 주간 한도(%)와 리셋까지 남은 시간, 지금 먼저 걸리는 한도 강조
+- 추가 사용 크레딧(이번 달 사용액 / 월 한도), 오늘 쓴 토큰(로컬 세션 로그 집계)
+- 알림: 85% 경고, 95% 위험, 100% 도달, 사용 속도 예측, 크레딧 사용 시작
+- 기본 / 작게(가로 막대) 보기, 클릭으로 남은 시간 ↔ 리셋 시각 전환
+- 사용량 API 호출 제한(429) 시 5 → 10 → 20 → 30분 대기, 재시작해도 이어받음
+
+## 플랫폼별 차이
+
+| | Windows | macOS |
+|---|---|---|
+| Claude 토큰 | `%USERPROFILE%\.claude\.credentials.json`. 만료되면 위젯이 refresh token으로 직접 갱신해 다시 저장(메뉴에서 끌 수 있음) | 키체인에서 **읽기만** 함. 만료되면 Claude Code CLI가 스스로 갱신하게 함(설정의 "CLI 토큰 자동 갱신", 기본 꺼짐) |
+| 토큰 만료 중 표시 | 마지막 값 | Claude 데스크톱 앱 기록, 리셋 시각 계산·추정, 마지막 값 순으로 대체 |
+| Codex | — | 로컬 로그에서 한도·오늘 토큰(로그인·네트워크 불필요) |
+| 상주 방식 | 바탕화면 카드(바탕화면 고정 / 일반 / 항상 위), 트레이 아이콘 | 메뉴바(형식 4종, 노치에 가려지면 자동 축소) |
+
+## 저장소 구조
+
+```
+windows/   Windows 위젯 (PowerShell + WinForms, NSIS 설치 파일) — 원본 저장소에서 가져옴
+macos/     macOS 메뉴바 앱 (Swift Package: UsageCore 라이브러리 + 앱, 단위 테스트)
+```
+
+## 출처와 관리
+
+- Windows 위젯은 [hideface/ClaudeUsageWidget](https://github.com/hideface/ClaudeUsageWidget)에서 만들어졌고, 지금도 그곳에서 개발됩니다. 이 저장소는 원본을 포크해 Windows 업데이트를 필요할 때 가져옵니다.
+- macOS 버전은 이 포크에서 새로 구현했습니다(Windows 코드를 옮긴 게 아니라 같은 동작을 Swift로 작성). 첫 버전은 원본에도 병합됐고([#1](https://github.com/hideface/ClaudeUsageWidget/pull/1)), 이후 버전(Codex, 통합 메뉴바, 토큰 만료 대응)은 이 저장소에서 관리합니다.
 
 ## 주의
 
-- 한도 조회 API는 문서화되지 않은 엔드포인트라 응답 형식이 바뀌면 동작하지 않을 수 있습니다. 오류는 우클릭 → 오류 로그 열기로 확인하세요.
-- 숨겨진 PowerShell이 인증 파일을 읽고 토큰 엔드포인트를 호출하므로 EDR/백신 정책에 따라 탐지될 수 있습니다. 사내 배포 전 보안 담당자와 공유를 권장합니다.
-- 설치 파일에 코드 서명이 없어 Windows Defender 등이 `Trojan:Win32/Wacatac.C!ml` 같은 머신러닝 기반 일반 탐지로 오탐할 수 있습니다. 같은 소스를 다시 빌드하면 결과가 달라지기도 했습니다. 걱정되면 소스(`src/`)를 직접 확인하고 `build.sh` 로 빌드해서 쓰세요.
-- PowerShell 실행을 막는 정책(AppLocker, Constrained Language Mode)에서는 동작하지 않습니다.
-
-## 구조 / 빌드
-
-```
-src/
-  widget.ps1         위젯 UI (WinForms, GDI 렌더링, 알림)
-  fetch-usage.ps1    수집기 (API 조회, 토큰 갱신, jsonl 증분 집계) — 위젯 안의 별도 runspace에서 실행
-installer/
-  launcher.c/.rc     콘솔 없는 런처 (mingw-w64)
-  setup.nsi          NSIS 설치 스크립트
-  stop-widget.ps1    설치/제거 시 실행 중인 위젯 종료
-  app.ico
-build.sh             런처 + 설치 파일 빌드
-```
-
-```bash
-sudo apt install gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 nsis
-./build.sh      # installer/ClaudeUsageWidget-Setup-x.y.z.exe
-```
-
-버전은 `installer/setup.nsi` 의 `VERSION` 과 `installer/launcher.rc` 에서 올립니다.
+- 한도 조회에 쓰는 `https://api.anthropic.com/api/oauth/usage`는 문서화되지 않은 엔드포인트라, 응답 형식이 바뀌면 동작하지 않을 수 있습니다.
+- 두 앱 모두 코드 서명·공증이 없어 처음 실행할 때 OS 경고가 뜹니다(Windows SmartScreen, macOS Gatekeeper). 사내 배포 전에는 보안 담당자와 공유하길 권장합니다.

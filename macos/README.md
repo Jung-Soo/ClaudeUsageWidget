@@ -1,9 +1,8 @@
 # Claude Usage Bar (macOS)
 
 Claude Code 구독 플랜 사용량을 메뉴바에 보여 주는 macOS 앱입니다. Codex(앱·CLI)를 쓰면 Codex 사용량도 함께 보여 줍니다.
-이 저장소의 Windows 위젯과 같은 정보를 보여 주는 macOS 버전입니다. Windows 코드를 옮긴 게 아니라, 같은 동작을 Swift/SwiftUI로 새로 구현했습니다.
 
-> macOS 버전은 포크 [Jung-Soo/ClaudeUsageWidget](https://github.com/Jung-Soo/ClaudeUsageWidget)에서 따로 관리합니다. Windows 위젯의 업데이트는 원본 [hideface/ClaudeUsageWidget](https://github.com/hideface/ClaudeUsageWidget)에서 필요할 때 가져옵니다.
+[Windows 위젯](../windows/README.md)과 같은 정보를 보여 주는 macOS 버전입니다. Windows 코드를 옮긴 게 아니라, 같은 동작을 Swift/SwiftUI로 새로 구현했습니다. 저장소 전체 소개는 [루트 README](../README.md)를 보세요.
 
 <img src="docs/images/menubar-combined-light.png" width="200"> <img src="docs/images/menubar-light.png" width="220"> <img src="docs/images/settings-light.png" width="300">
 
