@@ -14,25 +14,24 @@
 
 ## 원본(Windows) 업데이트 가져오기
 
-원본은 Windows 파일을 루트(`src/`, `installer/`, `build.sh`, `README.md`)에 두고, 이 저장소는 `windows/` 아래로 옮겨 두었다. git은 병합할 때 이름 바꾸기를 따라가므로 원본이 고친 기존 파일은 대개 `windows/` 쪽에 자동으로 반영된다.
+사용자가 "원본 업데이트 반영해줘"라고 하면:
 
 ```bash
-git fetch upstream
-git log --oneline --stat main..upstream/main     # 무엇이 새로 왔는지 먼저 확인
-git checkout main && git merge upstream/main
+tools/sync-upstream.sh --push
 ```
 
-병합 시험 결과(2026-10-02, 가짜 원본 업데이트로 확인):
-- 기존 파일 수정 → `windows/` 쪽에 자동 반영(CRLF 유지)
-- 루트 `src/` 등에 **새 파일** → git이 `windows/src/`로 옮겨 놓고 `CONFLICT (file location)`으로 표시만 함 → 위치 확인 후 `git add`
-- 원본 **README.md** 수정 → 루트 README와 **충돌**(루트는 이 저장소 개요)
+스크립트가 하는 일(손이 가지 않게):
+- 원본 새 커밋이 없으면 그냥 끝
+- 병합 후 루트 `README.md`는 항상 이 저장소 것(두 플랫폼 개요)으로 되돌림
+- `windows/README.md`는 원본 README를 **그대로 복사**하고 맨 위 안내 한 줄과 링크(`../../releases` → 원본 Releases, `macos/` → `../macos/`)만 고쳐 다시 만듦 → 이 파일은 직접 고치지 않는다
+- 원본은 Windows 파일을 루트(`src/`, `installer/`, `build.sh`)에 두지만 이 저장소는 `windows/` 아래에 둔다. 기존 파일 수정은 git이 이름 바꾸기를 따라가 `windows/`에 반영하고, 원본이 새로 넣은 파일은 git이 `windows/` 아래로 옮겨 둔 것을 받아들임
+- macOS 테스트 → 병합 커밋 → `--push`면 포크에 push
 
-병합 뒤 확인·정리:
-- 원본이 **새 파일**을 루트 `src/`·`installer/` 등에 추가했다면 → `windows/` 아래 같은 위치로 `git mv`
-- 원본 **README.md** 변경 → `windows/README.md`에 반영(루트 README는 이 저장소의 개요라 원본 내용으로 덮지 않는다). 충돌하면 루트는 우리 것, 내용은 `windows/README.md`로
-- 원본이 **`macos/`**(PR #1로 들어간 옛 맥 코드)를 고쳤다면 → 우리 버전 유지, 살릴 변경만 따로 옮김
-- `.gitattributes`의 줄바꿈 규칙(`*.ps1 eol=crlf` 등)은 경로와 무관하게 적용되므로 그대로 둔다
-- `cd macos && swift test` 후 `git push origin main`
+종료 코드: `0` 완료(또는 새 커밋 없음) · `1` main이 아니거나 커밋 안 된 변경 · `2` 자동으로 못 푼 충돌(병합 진행 중으로 남김: `macos/` 쪽이면 우리 버전 유지, 그 밖엔 내용을 보고 정리 후 `git commit`) · `3` macOS 테스트 실패(커밋 안 함)
+
+`tools/sync-upstream.sh --readme-only`는 `windows/README.md`만 원본 기준으로 다시 만든다.
+
+시험(2026-10-02, 가짜 원본 커밋으로 끝까지 실행): README 추가 줄 → `windows/README.md`에 자동 반영, 루트 README 유지, `src/widget.ps1` 수정 → `windows/src/`에 반영(CRLF 유지), 새 `src/helper.ps1` → `windows/src/helper.ps1`, 병합 커밋까지 종료 코드 0.
 
 Windows 쪽에 새 기능이 생기면(예: 1.6 작게 모드) 맥에도 가져올지 사용자에게 먼저 묻는다.
 
