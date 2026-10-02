@@ -48,3 +48,42 @@ open ~/Applications/ClaudeUsageBar.app --args --simulate-expired-token   # 실�
 3. 키체인 토큰 만료 여부(값은 출력하지 말 것):
    `security find-generic-password -s "Claude Code-credentials" -w | python3 -c 'import json,sys,time;o=json.load(sys.stdin)["claudeAiOauth"];print("%.0f min left"%((o["expiresAt"]/1000-time.time())/60))'`
 4. API 응답 형식이 바뀌어 패널에 "조회 실패(응답 형식 변경)"가 뜨면 `UsageResponse.swift`와 픽스처를 새 형식에 맞춘다
+
+## 저장소 운영 (포크에서 따로 관리)
+
+- `origin` = **Jung-Soo/ClaudeUsageWidget** (주 저장소, macOS 버전은 여기 `main`에서 개발), `upstream` = hideface/ClaudeUsageWidget (원본, Windows 위젯)
+- 우리가 고치는 곳은 `macos/`뿐. 원본 파일(`src/`, `installer/`, `build.sh`, `.gitattributes`)과 루트 `README.md`는 되도록 건드리지 않는다(동기화 충돌 방지)
+- 공개 커밋 작성자는 GitHub noreply 주소(`26371525+Jung-Soo@users.noreply.github.com`)
+
+### 원본(Windows) 업데이트 가져오기
+
+```bash
+git fetch upstream
+git log --oneline main..upstream/main          # 무엇이 새로 왔는지 먼저 확인
+git checkout main && git merge upstream/main   # 충돌이 없으면 그대로
+git push origin main
+```
+
+충돌이 나면:
+- `src/`, `installer/`, `build.sh` 등 Windows 쪽 → 원본(`upstream`) 버전을 쓴다
+- `macos/` → 우리 버전을 기본으로 하고, 원본 쪽 변경에 살릴 만한 게 있으면 따로 옮긴다
+- 루트 `README.md` → 원본 내용을 받아들이고, 맨 위 macOS 안내 한 줄만 유지한다
+- 병합 뒤 `cd macos && swift test`로 확인
+
+Windows 쪽에 새 기능이 생기면(예: 1.6 작게 모드처럼) 맥에도 가져올지 사용자에게 먼저 묻는다.
+
+### 동료 공유용 릴리스 만들기
+
+Apple Silicon + Intel 겸용, ad-hoc 서명. 번들은 iCloud 폴더 밖 임시 폴더에서 만들고 `ditto`로 묶어야 서명이 유지된다.
+
+```bash
+swift build -c release --arch arm64 --arch x86_64
+BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/ClaudeUsageBar"
+STAGE=$(mktemp -d); APP="$STAGE/ClaudeUsageBar.app"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$BIN" "$APP/Contents/MacOS/" && cp Resources/Info.plist "$APP/Contents/"
+xattr -cr "$APP" && codesign --force --sign - "$APP"
+ditto -c -k --keepParent "$APP" ClaudeUsageBar-<버전>.zip
+```
+
+받는 사람은 처음 실행 때 시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기"가 필요하다(서명·공증 없음). 버전은 `Resources/Info.plist`의 `CFBundleShortVersionString`.

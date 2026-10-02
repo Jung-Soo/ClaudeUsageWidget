@@ -23,14 +23,14 @@ Claude Code 구독 플랜 사용량을 맥 메뉴바에 보여 주는 앱입니�
 
 Claude Code(터미널 `claude` 또는 데스크톱 앱의 Code 탭)에 아래처럼 요청합니다.
 
-> https://github.com/hideface/ClaudeUsageWidget 을 클론해서 macos 폴더의 메뉴바 앱을 빌드하고 실행해줘
+> https://github.com/Jung-Soo/ClaudeUsageWidget 을 클론해서 macos 폴더의 메뉴바 앱을 빌드하고 실행해줘
 
 저장소의 `CLAUDE.md`에 빌드·실행·문제 진단 방법이 들어 있어서, Claude Code가 이를 읽고 알아서 진행합니다. 빌드 도구가 없으면 설치 방법도 안내해 줍니다.
 
 ### 방법 B. 터미널에서 직접
 
 ```bash
-git clone https://github.com/hideface/ClaudeUsageWidget.git
+git clone https://github.com/Jung-Soo/ClaudeUsageWidget.git
 ```
 
 ```bash
