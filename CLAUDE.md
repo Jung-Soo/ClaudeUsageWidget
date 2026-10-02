@@ -22,6 +22,11 @@ git log --oneline --stat main..upstream/main     # 무엇이 새로 왔는지 �
 git checkout main && git merge upstream/main
 ```
 
+병합 시험 결과(2026-10-02, 가짜 원본 업데이트로 확인):
+- 기존 파일 수정 → `windows/` 쪽에 자동 반영(CRLF 유지)
+- 루트 `src/` 등에 **새 파일** → git이 `windows/src/`로 옮겨 놓고 `CONFLICT (file location)`으로 표시만 함 → 위치 확인 후 `git add`
+- 원본 **README.md** 수정 → 루트 README와 **충돌**(루트는 이 저장소 개요)
+
 병합 뒤 확인·정리:
 - 원본이 **새 파일**을 루트 `src/`·`installer/` 등에 추가했다면 → `windows/` 아래 같은 위치로 `git mv`
 - 원본 **README.md** 변경 → `windows/README.md`에 반영(루트 README는 이 저장소의 개요라 원본 내용으로 덮지 않는다). 충돌하면 루트는 우리 것, 내용은 `windows/README.md`로
