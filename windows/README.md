@@ -1,8 +1,10 @@
-# Claude Usage Widget — Windows
+> 이 문서는 원본 [hideface/ClaudeUsageWidget](https://github.com/hideface/ClaudeUsageWidget)의 README를 그대로 옮긴 것입니다. 원본을 가져올 때(`tools/sync-upstream.sh`) 자동으로 갱신되니 직접 고치지 마세요. 설치 파일은 원본 [Releases](https://github.com/hideface/ClaudeUsageWidget/releases)에서 받고, 빌드는 이 폴더(`windows/`)에서 `./build.sh`를 실행합니다. macOS 버전은 [../macos](../macos/README.md)를 보세요.
+
+# ClaudeUsageWidget
 
 Claude Code 플랜 사용량을 바탕화면에 띄워 두는 Windows용 미니 위젯입니다.
 
-> Windows 위젯은 원본 저장소 [hideface/ClaudeUsageWidget](https://github.com/hideface/ClaudeUsageWidget)에서 개발되고, 이 저장소는 그 업데이트를 가져와 `windows/`에 둡니다. macOS 버전은 [`../macos`](../macos/README.md)를 보세요.
+> **macOS**: 메뉴바 버전은 [`macos/`](../macos/README.md)에 있습니다. 설치는 [macos/docs/GUIDE.md](../macos/docs/GUIDE.md)를 참고하세요.
 
 - 카드: 주간 한도 큰 링 + 리셋까지 남은 시간, 5시간 / 사용률이 가장 높은 모델 주간 한도 작은 링 (사용률에 따라 색이 주황 → 빨강)
 - 플랜 표시 (예: Team · Max 5x), 마지막 갱신 시각
@@ -22,7 +24,7 @@ Claude Code 플랜 사용량을 바탕화면에 띄워 두는 Windows용 미니 
 
 ## 설치
 
-원본 저장소의 [Releases](https://github.com/hideface/ClaudeUsageWidget/releases)에서 `ClaudeUsageWidget-Setup-x.y.z.zip` (또는 `.exe`)을 받아 압축을 풀고 `ClaudeUsageWidget-Setup-x.y.z.exe` 를 실행합니다.
+[Releases](https://github.com/hideface/ClaudeUsageWidget/releases)에서 `ClaudeUsageWidget-Setup-x.y.z.zip` (또는 `.exe`)을 받아 압축을 풀고 `ClaudeUsageWidget-Setup-x.y.z.exe` 를 실행합니다.
 
 - 관리자 권한 불필요, 현재 사용자에게만 설치 (`%LOCALAPPDATA%\Programs\ClaudeUsageWidget`)
 - 시작 메뉴 바로가기, 선택 시 로그인 자동 실행
@@ -58,8 +60,6 @@ Claude Code 플랜 사용량을 바탕화면에 띄워 두는 Windows용 미니 
 
 ## 구조 / 빌드
 
-`windows/` 아래:
-
 ```
 src/
   widget.ps1         위젯 UI (WinForms, GDI 렌더링, 알림)
@@ -74,7 +74,7 @@ build.sh             런처 + 설치 파일 빌드
 
 ```bash
 sudo apt install gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 nsis
-cd windows && ./build.sh      # windows/installer/ClaudeUsageWidget-Setup-x.y.z.exe
+./build.sh      # installer/ClaudeUsageWidget-Setup-x.y.z.exe
 ```
 
 버전은 `installer/setup.nsi` 의 `VERSION` 과 `installer/launcher.rc` 에서 올립니다.

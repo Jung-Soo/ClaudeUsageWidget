@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# 원본(hideface/ClaudeUsageWidget, Windows 위젯)의 새 커밋을 이 저장소 main에 병합한다. 사람 손이 가지 않게:
+#   - 루트 README.md는 항상 이 저장소 것(두 플랫폼 개요)을 유지
+#   - windows/README.md는 원본 README를 그대로 복사하고 맨 위 안내 한 줄과 링크만 고쳐 다시 만든다
+#   - 원본이 루트 src/·installer/ 등에 새로 넣은 파일은 git이 windows/ 아래로 옮겨 둔 것을 그대로 받는다
+#   - 그 밖의 충돌이 있으면 병합을 멈춘 채로 두고 종료 코드 2
+# 사용: tools/sync-upstream.sh [--push]   |   tools/sync-upstream.sh --readme-only (windows/README.md만 다시 만듦)
+#   환경변수: UPSTREAM_REF(기본 upstream/main), NO_FETCH=1, SKIP_TESTS=1
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+REF="${UPSTREAM_REF:-upstream/main}"
+UPSTREAM_URL="https://github.com/hideface/ClaudeUsageWidget"
+NAME="${GIT_AUTHOR_NAME:-Jung-Soo}"
+EMAIL="${GIT_AUTHOR_EMAIL:-26371525+Jung-Soo@users.noreply.github.com}"
+PUSH=0; [[ "${1:-}" == "--push" ]] && PUSH=1
+
+[[ "$(git branch --show-current)" == "main" ]] || { echo "main 브랜치에서 실행하세요."; exit 1; }
+if [[ "${1:-}" != "--readme-only" ]]; then
+  git diff --quiet && git diff --cached --quiet || { echo "커밋하지 않은 변경이 있어 멈춥니다."; exit 1; }
+fi
+[[ -n "${NO_FETCH:-}" ]] || git fetch -q upstream
+
+NEW=$(git rev-list --count "main..$REF")
+if [[ "$NEW" == 0 && "${1:-}" != "--readme-only" ]]; then echo "원본에 새 커밋이 없습니다."; exit 0; fi
+[[ "$NEW" == 0 ]] || { echo "원본 새 커밋 ${NEW}개:"; git log --oneline "main..$REF" | sed 's/^/  /'; }
+
+# 원본 README → windows/README.md (안내 한 줄 + 원본 그대로, 루트 기준 링크만 windows/ 기준으로)
+render_windows_readme() {
+  {
+    echo "> 이 문서는 원본 [hideface/ClaudeUsageWidget]($UPSTREAM_URL)의 README를 그대로 옮긴 것입니다. 원본을 가져올 때(\`tools/sync-upstream.sh\`) 자동으로 갱신되니 직접 고치지 마세요. 설치 파일은 원본 [Releases]($UPSTREAM_URL/releases)에서 받고, 빌드는 이 폴더(\`windows/\`)에서 \`./build.sh\`를 실행합니다. macOS 버전은 [../macos](../macos/README.md)를 보세요."
+    echo
+    git show "$REF:README.md" \
+      | sed -e "s#](\.\./\.\./releases)#]($UPSTREAM_URL/releases)#g" \
+            -e 's#](macos/#](../macos/#g'
+  } > windows/README.md
+}
+
+if [[ "${1:-}" == "--readme-only" ]]; then render_windows_readme; echo "windows/README.md를 $REF 기준으로 다시 만들었습니다."; exit 0; fi
+
+git merge --no-ff --no-commit "$REF" >/dev/null 2>&1 || true
+
+# 1) 루트 README는 우리 것
+git checkout HEAD -- README.md 2>/dev/null || true
+git add README.md
+# 2) windows/README.md는 원본에서 다시 만든다
+if git cat-file -e "$REF:README.md" 2>/dev/null; then render_windows_readme; git add windows/README.md; fi
+# 3) windows/ 아래 충돌: 위치만 옮겨진 새 파일은 받아들이고, 내용 충돌이면 멈춘다
+for f in $(git diff --name-only --diff-filter=U -- windows/); do
+  if [[ -f "$f" ]] && ! grep -q '^<<<<<<< ' "$f"; then git add "$f"; echo "  새 파일 위치 확인: $f"; fi
+done
+
+LEFT=$(git diff --name-only --diff-filter=U)
+if [[ -n "$LEFT" ]]; then
+  echo "자동으로 풀지 못한 충돌이 있습니다(병합은 진행 중인 상태로 둠):"; echo "$LEFT" | sed 's/^/  /'
+  echo "정리한 뒤 'git commit', 취소하려면 'git merge --abort'."
+  exit 2
+fi
+# 루트에 남은 원본 경로(예: 원본이 새 폴더를 만든 경우)는 알려만 준다
+for d in src installer build.sh; do [[ -e "$d" ]] && echo "주의: 루트에 '$d'가 생겼습니다. windows/ 아래로 옮길지 확인하세요."; done
+
+if [[ -z "${SKIP_TESTS:-}" ]]; then (cd macos && swift test 2>&1 | grep -E "Test run with|error:" ) || { echo "macOS 테스트 실패. 병합은 커밋하지 않았습니다."; exit 3; }; fi
+
+git -c user.name="$NAME" -c user.email="$EMAIL" commit -q -m "Merge upstream Windows updates ($(git rev-parse --short "$REF"))
+
+$(git log --oneline "HEAD..$REF" | sed 's/^/- /')"
+echo "병합 커밋: $(git log --oneline -1)"
+if [[ "$PUSH" == 1 ]]; then git push -q origin main && echo "origin/main에 push했습니다."; else echo "확인 후: git push origin main"; fi
