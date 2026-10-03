@@ -1,8 +1,10 @@
+[English](GUIDE.md) | **한국어**
+
 # Claude Usage Bar 사용 가이드
 
 Claude Code 구독 플랜 사용량을 맥 메뉴바에 보여 주는 앱입니다. 5시간·주간·모델별 한도를 도넛으로 보여 주고, 한도에 가까워지면 알림을 보냅니다. Codex(ChatGPT 앱의 Codex, CLI, VS Code 확장)를 쓰면 Codex 사용량도 함께 보여 줍니다.
 
-<img src="images/menubar-light.png" width="220"> <img src="images/panel-light.png" width="240">
+<img src="images/hero-ko.png" width="420">
 
 ---
 
@@ -55,7 +57,7 @@ ditto -c -k --keepParent ~/Applications/ClaudeUsageBar.app ClaudeUsageBar.zip
 3. **시스템 설정 → 개인정보 보호 및 보안** 아래쪽의 **"그래도 열기"**를 누릅니다(한 번만 하면 됨)
    - 또는 터미널에서: `xattr -dr com.apple.quarantine /Applications/ClaudeUsageBar.app`
 
-주의: 이 방법으로 받은 앱은 **Apple Silicon 맥 전용**입니다(Intel 맥은 방법 A나 B로 직접 빌드).
+`ditto`로 묶은 개인 빌드는 빌드한 맥과 같은 종류(Apple Silicon 또는 Intel)에서만 돌아갑니다. 동료 공유용으로 배포하는 zip은 두 종류 모두에서 돌아가는 겸용 빌드입니다.
 
 ## 3. 사용법
 
@@ -68,6 +70,9 @@ ditto -c -k --keepParent ~/Applications/ClaudeUsageBar.app ClaudeUsageBar.zip
 - **Codex 도넛·숫자**(파랑): Codex 한도 중 가장 높은 사용률
 - 마우스를 올리면 각 숫자의 이름이 툴팁으로 보입니다
 - 메뉴바 공간이 부족해 노치 뒤로 숨겨지면 Claude 부분이 `◔ 27%`로 자동으로 줄어듭니다
+- 형식은 설정에서 네 가지 중 고를 수 있습니다
+
+<img src="images/menubar-styles-ko.png" width="380">
 
 ### 패널 (메뉴바 항목 클릭)
 
@@ -80,6 +85,8 @@ ditto -c -k --keepParent ~/Applications/ClaudeUsageBar.app ClaudeUsageBar.zip
 - **각 섹션 맨 아래 줄**: 그 서비스 값이 언제 기준인지, 문제가 있으면 무슨 문제인지(아래 5장)
 - ⟳ 지금 갱신, ⋯ 설정·데이터 폴더·종료
 - 설정 → 패널 크기 → **작게**를 고르면 도넛 대신 한도별 가로 막대로 짧게 보여 줍니다
+
+<img src="images/panel-compact-ko.png" width="280">
 
 ### Codex 값에 대해
 
@@ -107,7 +114,7 @@ ditto -c -k --keepParent ~/Applications/ClaudeUsageBar.app ClaudeUsageBar.zip
 
 ## 4. 설정 (우클릭 → 설정…)
 
-<img src="images/settings-light.png" width="300">
+<img src="images/settings-ko.png" width="340">
 
 | 항목 | 설명 |
 |---|---|
@@ -116,6 +123,7 @@ ditto -c -k --keepParent ~/Applications/ClaudeUsageBar.app ClaudeUsageBar.zip
 | 패널 크기 | 기본(도넛) / 작게(가로 막대) |
 | Claude 한도 조회 주기 | 2 / 3 / 5 / 10분(기본 3분). 너무 짧으면 호출 제한(429)에 걸립니다 |
 | CLI 토큰 자동 갱신 | 기본 꺼짐. 켜면 CLI 토큰이 만료될 때(약 8시간마다) 앱이 `claude`를 짧게 한 번 실행해 CLI가 스스로 갱신합니다. 갱신마다 약 500토큰, 잠자기 중에도 동작합니다. **터미널에서 `claude`를 거의 안 쓰고 데스크톱 앱 위주로 쓴다면 켜는 것을 권장합니다.** 데스크톱 앱은 켜져 있어도 사용량 기록을 하루 넘게 안 남기기도 해서, 끄면 값이 오래 멈춰 있을 수 있습니다 |
+| 언어 | 시스템 설정(기본) / English / 한국어. 바꾸면 앱이 다시 시작됩니다 |
 | 로그인 시 자동 실행 | 맥을 켤 때 자동으로 실행 |
 | 알림 | 경고·위험 기준치(80·95 / 85·95 / 90·98), 사용 속도 예측, 추가 크레딧 사용 알림 |
 | 알림 테스트 | 처음 누르면 macOS가 알림 허용을 묻습니다. 허용해야 알림이 옵니다 |

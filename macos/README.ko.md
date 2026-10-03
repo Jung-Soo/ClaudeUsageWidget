@@ -1,12 +1,14 @@
+[English](README.md) | **한국어**
+
 # Claude Usage Bar (macOS)
 
 Claude Code 구독 플랜 사용량을 메뉴바에 보여 주는 macOS 앱입니다. Codex(앱·CLI)를 쓰면 Codex 사용량도 함께 보여 줍니다.
 
-[Windows 위젯](../windows/README.md)과 같은 정보를 보여 주는 macOS 버전입니다. Windows 코드를 옮긴 게 아니라, 같은 동작을 Swift/SwiftUI로 새로 구현했습니다. 저장소 전체 소개는 [루트 README](../README.md)를 보세요.
+[Windows 위젯](../windows/README.md)과 같은 정보를 보여 주는 macOS 버전입니다. Windows 코드를 옮긴 게 아니라, 같은 동작을 Swift/SwiftUI로 새로 구현했습니다. 저장소 전체 소개는 [루트 README](../README.ko.md)를 보세요.
 
-<img src="docs/images/menubar-combined-light.png" width="200"> <img src="docs/images/menubar-light.png" width="220"> <img src="docs/images/settings-light.png" width="300">
+<img src="docs/images/hero-ko.png" width="420">
 
-<img src="docs/images/panel-light.png" width="260"> <img src="docs/images/panel-compact-dark.png" width="260">
+<img src="docs/images/panel-compact-ko.png" width="300"> <img src="docs/images/menubar-styles-ko.png" width="380">
 
 ## 요구 사항
 
@@ -18,7 +20,8 @@ Claude Code 구독 플랜 사용량을 메뉴바에 보여 주는 macOS 앱입�
 ```bash
 scripts/build-app.sh --run      # ~/Applications/ClaudeUsageBar.app 생성 후 실행
 swift test                      # 단위 테스트
-.build/debug/ClaudeUsageBar --snapshot out/   # 실제 데이터로 패널·메뉴바 PNG 생성
+.build/debug/ClaudeUsageBar --snapshot out/   # 실제 데이터로 패널·메뉴바 PNG, out/docs/에 문서용 다크 이미지(예시 값)
+CUB_LANG=en .build/debug/ClaudeUsageBar --snapshot out/   # 영어 화면으로
 ```
 
 ## 데이터 출처
@@ -51,7 +54,8 @@ swift test                      # 단위 테스트
 - 표시할 서비스: Claude / Codex 각각 켜고 끄기. 처음에는 `~/.claude`, `~/.codex/sessions`가 있는지로 자동 결정. Claude를 끄면 키체인·API에 접근하지 않음
 - Codex 색은 파랑 한 가지(70%+ 주황, 90%+ 빨강)
 - 알림: 경고(85%) · 위험(95%) · 100% 도달 · 사용 속도 예측(60분 안에 한도) · 추가 크레딧 사용. 리셋 주기마다 단계별 1회
-- 설정(우클릭 또는 패널 ⋯ → 설정…): 표시할 서비스, 메뉴바 형식, 패널 크기, Claude 조회 주기(2/3/5/10분), 로그인 시 자동 실행, 알림 기준치(80·95 / 85·95 / 90·98), 알림 테스트
+- 화면 언어: 시스템 언어가 한국어면 한국어, 그 밖에는 영어. 설정 → 언어에서 바꿀 수 있음(앱이 다시 시작됨)
+- 설정(우클릭 또는 패널 ⋯ → 설정…): 표시할 서비스, 메뉴바 형식, 패널 크기, Claude 조회 주기(2/3/5/10분), 언어, 로그인 시 자동 실행, 알림 기준치(80·95 / 85·95 / 90·98), 알림 테스트
 
 ## 앱 데이터
 
@@ -59,5 +63,5 @@ swift test                      # 단위 테스트
 
 ## 문서
 
-- [docs/GUIDE.md](docs/GUIDE.md): 설치·사용·문제 해결 가이드
+- [docs/GUIDE.ko.md](docs/GUIDE.ko.md): 설치·사용·문제 해결 가이드
 - [CLAUDE.md](CLAUDE.md): Claude Code로 빌드·수정할 때 참고하는 안내

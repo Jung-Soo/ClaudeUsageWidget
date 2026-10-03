@@ -1,14 +1,15 @@
 # Claude Usage Bar (macOS) — Claude Code 작업 안내
 
 Claude Code 구독 플랜 사용량(5시간 / 주간 / 모델별 주간 한도, 추가 크레딧, 오늘 토큰)과 Codex(앱·CLI·VS Code 확장이 같은 로그를 씀) 한도를 메뉴바에 보여 주는 macOS 앱.
-사용자 가이드는 `docs/GUIDE.md`, 사용자에게 설명할 때는 그 문서의 표현을 따른다.
+사용자 가이드는 `docs/GUIDE.md`(영어)·`docs/GUIDE.ko.md`(한국어), 사용자에게 설명할 때는 그 문서의 표현을 따른다.
 
 ## 명령
 
 ```bash
 scripts/build-app.sh --run      # release 빌드 → ~/Applications/ClaudeUsageBar.app 설치 후 실행(기존 인스턴스 종료)
 swift test                      # 단위 테스트 (UsageCore)
-swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이터로 패널·메뉴바·설정 PNG(state.json 복사본 사용, API 호출 안 함)
+swift build && .build/debug/ClaudeUsageBar --snapshot <폴더>   # 실제 데이터로 패널·메뉴바·설정 PNG(state.json 복사본 사용, API 호출 안 함) + <폴더>/docs/에 문서용 다크 이미지(예시 값)
+CUB_LANG=en swift test                                          # 영어 환경에서도 테스트(언어와 무관하게 통과해야 함)
 .build/debug/ClaudeUsageBar --test-refresh                      # 자동 갱신과 같은 조건으로 CLI 실행 점검(약 500토큰)
 open ~/Applications/ClaudeUsageBar.app --args --simulate-expired-token   # 실제 앱에서 토큰 만료를 한 번 흉내 내 자동 갱신 흐름 전체 점검(설정에서 자동 갱신이 켜져 있어야 CLI 실행)
 ```
@@ -31,6 +32,7 @@ open ~/Applications/ClaudeUsageBar.app --args --simulate-expired-token   # 실�
   - `CodexTokens.swift` 오늘 Codex 토큰: 세션별 `total_token_usage` 누적치(오늘 마지막 − 0시 이전 마지막). 첫 스캔은 오늘 수정된 파일 전체(수백 MB 가능), 이후 증분
   - `UsageEngine.swift` 위를 묶는 actor. `tick(claude:codex:)`로 서비스별 켜기/끄기(Claude를 끄면 키체인·API 접근 안 함)
 - `Sources/ClaudeUsageBar/` — AppKit 상태 항목(하나, 서비스별 조각을 텍스트 첨부 이미지로 이어 붙임) + SwiftUI 패널(서비스별 섹션, 기본/작게)·설정, 알림, 스냅샷 모드
+- `Localization.swift` 화면 언어. `L("한국어", "English")`로 두 언어를 나란히 적는다. `Lang.current`는 `CUB_LANG` → 설정의 `language` → 시스템 언어(ko면 한국어, 그 밖은 영어) 순으로 시작할 때 한 번 정한다. 한도 이름은 `LimitRow.displayName`(종류에서 매번 만듦, state.json의 예전 이름 무시), 오류는 `FetchError` 코드로 저장
 - 큰 파일 읽기는 조각마다 `autoreleasepool`로 비운다(안 그러면 첫 스캔 때 메모리가 파일 크기만큼 오른다)
 - `Tests/UsageCoreTests/Fixtures/` — API 응답·데스크톱 기록·세션 로그 샘플
 
@@ -39,11 +41,13 @@ open ~/Applications/ClaudeUsageBar.app --args --simulate-expired-token   # 실�
 - **토큰은 읽기만 한다.** 앱이 refresh token으로 갱신하거나 키체인에 다시 쓰지 않는다(Claude Code 로그인이 풀릴 수 있음). 만료되면 CLI가 스스로 갱신하게 한다: 사용자가 터미널에서 `claude`를 실행하거나, 설정의 "CLI 토큰 자동 갱신"(기본 꺼짐)을 켜면 앱이 `CLIRefresher.swift`로 CLI를 짧게 실행(Haiku·짧은 시스템 프롬프트·도구/MCP 끔·세션 저장 안 함, 약 500토큰, 일시적 실패는 2분부터 두 배씩 최대 30분·CLI 없음은 30분 간격). `claude auth status`로는 갱신되지 않는다(확인함)
 - 토큰 값을 출력·로그·커밋에 남기지 않는다. 디버깅할 때도 `security ... -w` 결과를 그대로 출력하지 말고 구조만 확인한다(`Redact.secrets` 참고)
 - 사용량 API는 2분보다 자주 호출하지 않는다(429 유발)
+- **화면 문구는 반드시 두 언어로**: 새 문구는 `L("…", "…")`로 쓴다. 테스트는 언어에 따라 달라지는 기대값을 `L(...)`/`LimitNames`로 쓰거나 `lang:`을 지정한다. 로그(`app.log`)는 영어
+- **문서도 두 언어로**: `README.md`/`docs/GUIDE.md`(영어, GitHub 첫 화면)와 `README.ko.md`/`docs/GUIDE.ko.md`(한국어)를 함께 고친다. 문서 이미지는 `docs/images/<이름>.png`(영어)·`<이름>-ko.png`(한국어)이고 `--snapshot`의 `docs/` 결과를 `CUB_LANG=en`/`ko`로 각각 만들어 복사한다(다크, 예시 값이라 실제 계정 정보가 없음)
 - 색은 그래프(도넛)에만 쓴다: 5시간 코랄 `#D85A30`, 주간 보라 `#7F77DD`, 모델별 청록 `#1D9E75`, Codex 전체 파랑 `#378ADD`, 70%+ 주황, 90%+ 빨강, 최신 아님 회색
 
 ## 문제 진단 순서
 
-1. `~/Library/Application Support/ClaudeUsageBar/app.log` (최근 200줄, 토큰 마스킹됨). `[token] auto refresh`, `[desktop] 새 기록`(데스크톱 앱이 기록을 남긴 시각) 줄 참고
+1. `~/Library/Application Support/ClaudeUsageBar/app.log` (최근 200줄, 토큰 마스킹됨). `[token] auto refresh`, `[desktop] new sample`(데스크톱 앱이 기록을 남긴 시각) 줄 참고
 2. `state.json`의 `status`, `policy.nextAPI`(429 대기 중인지), `lastAPI.fetchedAt`
 3. 키체인 토큰 만료 여부(값은 출력하지 말 것):
    `security find-generic-password -s "Claude Code-credentials" -w | python3 -c 'import json,sys,time;o=json.load(sys.stdin)["claudeAiOauth"];print("%.0f min left"%((o["expiresAt"]/1000-time.time())/60))'`

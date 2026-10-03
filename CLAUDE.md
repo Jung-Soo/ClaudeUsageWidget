@@ -5,6 +5,10 @@
 - `windows/` — Windows 위젯(PowerShell 5.1 + WinForms, NSIS). **원본 [hideface/ClaudeUsageWidget](https://github.com/hideface/ClaudeUsageWidget)의 코드**이며 이 저장소에서는 고치지 않는다(동기화로만 바뀜). 사용자가 명시적으로 Windows 수정을 원하면 원본과 갈라진다는 점을 먼저 알린다
 - `macos/` — macOS 메뉴바 앱(Swift). 이 저장소에서 개발한다. 작업 규칙·명령·구조는 [`macos/CLAUDE.md`](macos/CLAUDE.md)
 
+## 문서 언어
+
+GitHub 첫 화면은 영어. 루트·`macos/`의 `README.md`와 `macos/docs/GUIDE.md`는 영어, 같은 자리의 `*.ko.md`가 한국어이고 맨 위에 `English | 한국어` 전환 링크가 있다. 고칠 때는 두 언어를 함께 고친다. `windows/README.md`는 원본(한국어) 복사본이라 예외.
+
 ## 원격
 
 - `origin` = **Jung-Soo/ClaudeUsageWidget** (주 저장소, `main`)
@@ -22,7 +26,7 @@ tools/sync-upstream.sh --push
 
 스크립트가 하는 일(손이 가지 않게):
 - 원본 새 커밋이 없으면 그냥 끝
-- 병합 후 루트 `README.md`는 항상 이 저장소 것(두 플랫폼 개요)으로 되돌림
+- 병합 후 루트 `README.md`는 항상 이 저장소 것(두 플랫폼 개요, 영어)으로 되돌림. 한국어판 `README.ko.md`는 원본에 없는 파일이라 영향 없음
 - `windows/README.md`는 원본 README를 **그대로 복사**하고 맨 위 안내 한 줄과 링크(`../../releases` → 원본 Releases, `macos/` → `../macos/`)만 고쳐 다시 만듦 → 이 파일은 직접 고치지 않는다
 - 원본은 Windows 파일을 루트(`src/`, `installer/`, `build.sh`)에 두지만 이 저장소는 `windows/` 아래에 둔다. 기존 파일 수정은 git이 이름 바꾸기를 따라가 `windows/`에 반영하고, 원본이 새로 넣은 파일은 git이 `windows/` 아래로 옮겨 둔 것을 받아들임
 - macOS 테스트 → 병합 커밋 → `--push`면 포크에 push

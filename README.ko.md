@@ -1,9 +1,10 @@
+[English](README.md) | **한국어**
+
 # Claude Usage Widget
 
 Claude Code 구독 플랜 사용량(5시간 · 주간 · 모델별 한도)을 늘 보이는 곳에 띄워 두는 작은 도구입니다. **Windows**와 **macOS**를 지원하고, macOS 버전은 **Codex** 사용량도 함께 보여 줍니다.
 
-<img src="macos/docs/images/menubar-combined-light.png" width="220"><br>
-<img src="macos/docs/images/panel-light.png" width="260"> <img src="macos/docs/images/panel-compact-dark.png" width="260">
+<img src="macos/docs/images/hero-ko.png" width="420">
 
 ## 플랫폼
 
@@ -13,7 +14,8 @@ Claude Code 구독 플랜 사용량(5시간 · 주간 · 모델별 한도)을 �
 | 보여 주는 서비스 | Claude Code | Claude Code, Codex(ChatGPT 앱·CLI·VS Code 확장) |
 | 구현 | Windows PowerShell 5.1 + WinForms (추가 설치 없음) | Swift / SwiftUI, macOS 14 이상 |
 | 설치 | 원본 저장소 [Releases](https://github.com/hideface/ClaudeUsageWidget/releases)의 설치 파일 | 공유받은 zip, 또는 소스에서 빌드 |
-| 문서 | [windows/README.md](windows/README.md) | [macos/README.md](macos/README.md) · [설치·사용 가이드](macos/docs/GUIDE.md) |
+| 화면 언어 | 한국어 | 영어 / 한국어 (시스템 언어를 따름) |
+| 문서 | [windows/README.md](windows/README.md) | [macos/README.ko.md](macos/README.ko.md) · [설치·사용 가이드](macos/docs/GUIDE.ko.md) |
 
 ## 공통 기능
 
@@ -42,7 +44,7 @@ macos/     macOS 메뉴바 앱 (Swift Package: UsageCore 라이브러리 + 앱, 
 ## 출처와 관리
 
 - Windows 위젯은 [hideface/ClaudeUsageWidget](https://github.com/hideface/ClaudeUsageWidget)에서 만들어졌고, 지금도 그곳에서 개발됩니다. 이 저장소는 원본을 포크해 Windows 업데이트를 필요할 때 가져옵니다.
-- macOS 버전은 이 포크에서 새로 구현했습니다(Windows 코드를 옮긴 게 아니라 같은 동작을 Swift로 작성). 첫 버전은 원본에도 병합됐고([#1](https://github.com/hideface/ClaudeUsageWidget/pull/1)), 이후 버전(Codex, 통합 메뉴바, 토큰 만료 대응)은 이 저장소에서 관리합니다.
+- macOS 버전은 이 포크에서 새로 구현했습니다(Windows 코드를 옮긴 게 아니라 같은 동작을 Swift로 작성). 첫 버전은 원본에도 병합됐고([#1](https://github.com/hideface/ClaudeUsageWidget/pull/1)), 이후 버전(Codex, 통합 메뉴바, 토큰 만료 대응, 영문 화면)은 이 저장소에서 관리합니다.
 
 ## 주의
 
