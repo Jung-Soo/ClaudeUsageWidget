@@ -12,10 +12,10 @@ enum MenubarStyle: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var label: String {
         switch self {
-        case .donut: "① 도넛만"
-        case .donutActive: "② 도넛 + 숫자"
-        case .threeDonuts: "③ 미니 도넛 3개"
-        case .donutNumbers: "④ 도넛 + 숫자 3개"
+        case .donut: L("① 도넛만", "① Donut only")
+        case .donutActive: L("② 도넛 + 숫자", "② Donut + number")
+        case .threeDonuts: L("③ 미니 도넛 3개", "③ Three mini donuts")
+        case .donutNumbers: L("④ 도넛 + 숫자 3개", "④ Donut + three numbers")
         }
     }
 }
@@ -36,6 +36,8 @@ final class AppSettings {
     var showAbsoluteReset: Bool { didSet { defaults.set(showAbsoluteReset, forKey: "showAbsoluteReset") } }
     /// CLI 토큰이 만료되면 CLI를 짧게 실행해 갱신(기본 꺼짐, 갱신마다 약 500토큰).
     var autoRefreshClaudeToken: Bool { didSet { defaults.set(autoRefreshClaudeToken, forKey: "autoRefreshClaudeToken") } }
+    /// 표시 언어: "" 시스템, "en", "ko". 시작할 때 `Lang.current`가 읽으므로 바꾸면 다시 시작해야 한다.
+    var language: String { didSet { defaults.set(language.isEmpty ? nil : language, forKey: "language") } }
     var alerts: AlertSettings {
         didSet { if let d = try? JSONEncoder().encode(alerts) { defaults.set(d, forKey: "alerts") } }
     }
@@ -56,6 +58,7 @@ final class AppSettings {
         compactPanel = defaults.bool(forKey: "compactPanel")
         showAbsoluteReset = defaults.bool(forKey: "showAbsoluteReset")
         autoRefreshClaudeToken = defaults.bool(forKey: "autoRefreshClaudeToken")
+        language = defaults.string(forKey: "language") ?? ""
         alerts = defaults.data(forKey: "alerts").flatMap { try? JSONDecoder().decode(AlertSettings.self, from: $0) } ?? AlertSettings()
     }
 

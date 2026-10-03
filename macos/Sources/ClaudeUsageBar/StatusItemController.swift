@@ -110,17 +110,17 @@ final class StatusItemController: NSObject {
         var lines: [String] = []
         if store.settings.showClaude {
             let d = store.display
-            let parts = d.rows.map { "\($0.name) \(Format.percent($0.percent))%" }
-            let empty = d.status == .apiKeyOnly ? "API 키 사용 중(구독 한도 없음)" : "데이터 없음"
+            let parts = d.rows.map { "\($0.displayName) \(Format.percent($0.percent))%" }
+            let empty = d.status == .apiKeyOnly ? L("API 키 사용 중(구독 한도 없음)", "Using an API key (no plan limits)") : L("데이터 없음", "No data")
             lines.append("Claude  " + (parts.isEmpty ? empty : parts.joined(separator: " · "))
-                         + (d.source == .desktopHistory ? " (데스크톱 앱 기록)" : ""))
+                         + (d.source == .desktopHistory ? L(" (데스크톱 앱 기록)", " (desktop app data)") : ""))
         }
         if store.settings.showCodex {
             if let c = store.codex {
-                lines.append("Codex  " + c.rows.map { "\($0.name) \(Format.percent($0.percent))%" }.joined(separator: " · ")
-                             + (c.isStale ? " (\(Format.ago(c.asOf, now: Date())) 값)" : ""))
+                lines.append("Codex  " + c.rows.map { "\($0.displayName) \(Format.percent($0.percent))%" }.joined(separator: " · ")
+                             + (c.isStale ? L(" (\(Format.ago(c.asOf, now: Date())) 값)", " (data \(Format.ago(c.asOf, now: Date())))") : ""))
             } else {
-                lines.append("Codex  최근 기록 없음")
+                lines.append(L("Codex  최근 기록 없음", "Codex  no recent data"))
             }
         }
         return lines.joined(separator: "\n")
@@ -216,11 +216,11 @@ final class StatusItemController: NSObject {
     @objc private func clicked(_ sender: NSStatusBarButton) {
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
-            menu.addItem(withTitle: "지금 갱신", action: #selector(refreshNow), keyEquivalent: "r").target = self
-            menu.addItem(withTitle: "설정…", action: #selector(settingsClicked), keyEquivalent: ",").target = self
-            menu.addItem(withTitle: "데이터 폴더 열기", action: #selector(openData), keyEquivalent: "").target = self
+            menu.addItem(withTitle: L("지금 갱신", "Refresh Now"), action: #selector(refreshNow), keyEquivalent: "r").target = self
+            menu.addItem(withTitle: L("설정…", "Settings…"), action: #selector(settingsClicked), keyEquivalent: ",").target = self
+            menu.addItem(withTitle: L("데이터 폴더 열기", "Open Data Folder"), action: #selector(openData), keyEquivalent: "").target = self
             menu.addItem(.separator())
-            menu.addItem(withTitle: "종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            menu.addItem(withTitle: L("종료", "Quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             item.menu = menu
             sender.performClick(nil)
             item.menu = nil

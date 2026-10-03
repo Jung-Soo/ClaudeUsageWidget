@@ -125,7 +125,7 @@ public enum DisplayResolver {
         var d = base
         var rows: [LimitRow] = []
         if let p = s.fiveHour {
-            var r = LimitRow(kind: .session, name: "5시간", percent: p, resetsAt: nil, isActive: cached?.fiveHour?.isActive ?? false)
+            var r = LimitRow(kind: .session, name: LimitNames.fiveHour(), percent: p, resetsAt: nil, isActive: cached?.fiveHour?.isActive ?? false)
             if let known = cached?.fiveHour?.resetsAt, known > now, p > 0 {
                 r.resetsAt = known
             } else if let est = estimateFiveHourReset(samples, now: now) {
@@ -135,7 +135,7 @@ public enum DisplayResolver {
             rows.append(r)
         }
         if let p = s.weekly {
-            rows.append(LimitRow(kind: .weekly, name: "주간", percent: p,
+            rows.append(LimitRow(kind: .weekly, name: LimitNames.weekly(), percent: p,
                                  resetsAt: nextWeekly(after: cached?.weekly?.resetsAt, now: now),
                                  isActive: cached?.weekly?.isActive ?? false))
         }

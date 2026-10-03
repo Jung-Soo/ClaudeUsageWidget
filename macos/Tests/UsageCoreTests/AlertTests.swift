@@ -43,7 +43,7 @@ import Testing
         // 20분에 +20%p → 남은 30%p까지 약 30분
         let ev = s.evaluate(display(70, at: t0 + 1200), now: t0 + 1200, settings: cfg)
         #expect(ev.map(\.kind) == [.pace])
-        #expect(ev.first?.title == "이 속도면 약 30분 뒤 5시간 한도")
+        #expect(ev.first?.title == L("이 속도면 약 30분 뒤 5시간 한도", "At this pace, 5-hour limit in ~30 min"))
         #expect(s.evaluate(display(75, at: t0 + 1500), now: t0 + 1500, settings: cfg).isEmpty)
     }
 
@@ -59,7 +59,7 @@ import Testing
         #expect(s.evaluate(display(10, at: t0, credit: 3.0), now: t0, settings: cfg).isEmpty)          // 기준값만
         let ev = s.evaluate(display(10, at: t0 + 60, credit: 3.5), now: t0 + 60, settings: cfg)
         #expect(ev.map(\.kind) == [.credit])
-        #expect(ev.first?.body == "이번 달 $3.50 (+$0.50). 한도를 넘긴 사용분은 유료예요.")
+        #expect(ev.first?.body == L("이번 달 $3.50 (+$0.50). 한도를 넘긴 사용분은 유료예요.", "$3.50 this month (+$0.50). Usage beyond the limit is billed."))
         #expect(s.evaluate(display(10, at: t0 + 120, credit: 4.0), now: t0 + 120, settings: cfg).isEmpty)
         #expect(s.evaluate(display(10, at: t0 + 2000, credit: 4.5), now: t0 + 2000, settings: cfg).map(\.kind) == [.credit])
         #expect(s.evaluate(display(10, at: t0 + 4000, credit: 0.2), now: t0 + 4000, settings: cfg).isEmpty)  // 월 초기화

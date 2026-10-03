@@ -115,10 +115,13 @@ private func snapshot(at t: Date, five: Double = 42, fiveReset: Date? = nil) -> 
 @Suite struct FormatTests {
     let now = Date(timeIntervalSince1970: 0)
     @Test func left() {
-        #expect(Format.left(until: now + 86400 * 4 + 3 * 3600 + 5, now: now) == "4일 3시간")
-        #expect(Format.left(until: now + 2 * 3600 + 14 * 60 + 5, now: now) == "2시간 14분")
-        #expect(Format.left(until: now + 30, now: now) == "1분")
-        #expect(Format.left(until: now - 1, now: now) == "곧")
+        #expect(Format.left(until: now + 86400 * 4 + 3 * 3600 + 5, now: now, lang: .ko) == "4일 3시간")
+        #expect(Format.left(until: now + 2 * 3600 + 14 * 60 + 5, now: now, lang: .ko) == "2시간 14분")
+        #expect(Format.left(until: now + 30, now: now, lang: .ko) == "1분")
+        #expect(Format.left(until: now - 1, now: now, lang: .ko) == "곧")
+        #expect(Format.left(until: now + 86400 * 4 + 3 * 3600 + 5, now: now, lang: .en) == "4d 3h")
+        #expect(Format.left(until: now + 2 * 3600 + 14 * 60 + 5, now: now, lang: .en) == "2h 14m")
+        #expect(Format.left(until: now - 1, now: now, lang: .en) == "soon")
         #expect(Format.left(until: nil, now: now) == nil)
     }
     @Test func tokens() {

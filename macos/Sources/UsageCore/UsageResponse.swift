@@ -83,14 +83,14 @@ public enum UsageResponse {
                             isActive: fallback?.is_active ?? false, severity: fallback?.severity)
         }
 
-        let five = row(.session, "5시간", window: r.five_hour, fallback: session)
-        let week = row(.weekly, "주간", window: r.seven_day, fallback: weeklyAll)
+        let five = row(.session, LimitNames.fiveHour(), window: r.five_hour, fallback: session)
+        let week = row(.weekly, LimitNames.weekly(), window: r.seven_day, fallback: weeklyAll)
         let models = limits
             .filter { $0.kind == "weekly_scoped" }
             .compactMap { l -> LimitRow? in
                 guard let p = l.percent else { return nil }
-                let m = l.scope?.model?.display_name.flatMap { $0.isEmpty ? nil : $0 } ?? "모델"
-                return LimitRow(kind: .model(m), name: "\(m) 주간", percent: p,
+                let m = l.scope?.model?.display_name.flatMap { $0.isEmpty ? nil : $0 } ?? L("모델", "Model")
+                return LimitRow(kind: .model(m), name: LimitNames.modelWeekly(m), percent: p,
                                 resetsAt: ISODate.parse(l.resets_at), isActive: l.is_active ?? false, severity: l.severity)
             }
             .sorted { $0.percent > $1.percent }

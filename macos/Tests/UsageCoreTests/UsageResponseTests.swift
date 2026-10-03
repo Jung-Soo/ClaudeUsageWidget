@@ -10,7 +10,7 @@ import Testing
         #expect(s.fiveHour?.isActive == false)
         #expect(s.weekly?.percent == 25)
         #expect(s.weekly?.isActive == true)
-        #expect(s.models.map(\.name) == ["Fable 주간"])
+        #expect(s.models.map(\.displayName) == [LimitNames.modelWeekly("Fable")])
         #expect(s.models.first?.percent == 11)
         #expect(s.credit == Credit(enabled: true, used: 4.89, limit: 50, currency: "USD", percent: 9.78))
     }
@@ -30,7 +30,7 @@ import Testing
         #expect(s.fiveHour?.percent == 40)
         #expect(s.fiveHour?.isActive == true)
         #expect(s.weekly?.percent == 10)
-        #expect(s.models.map(\.name) == ["Sonnet 주간", "Opus 주간"])   // 높은 순
+        #expect(s.models.map(\.displayName) == ["Sonnet", "Opus"].map { LimitNames.modelWeekly($0) })   // 높은 순
     }
 
     @Test func spendIsUsedWhenExtraUsageMissing() throws {

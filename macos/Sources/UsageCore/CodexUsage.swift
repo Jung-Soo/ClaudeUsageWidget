@@ -161,6 +161,10 @@ public struct CodexDisplay: Sendable, Equatable {
     /// 추가 크레딧이 있을 때만(`has_credits`).
     public var credits: CodexCredits? = nil
 
+    public init(rows: [LimitRow], plan: String?, asOf: Date, isStale: Bool, credits: CodexCredits? = nil) {
+        self.rows = rows; self.plan = plan; self.asOf = asOf; self.isStale = isStale; self.credits = credits
+    }
+
     public var active: LimitRow? { rows.max { $0.percent < $1.percent } }
     public var others: [LimitRow] { rows.filter { $0.id != active?.id } }
 }
@@ -176,7 +180,9 @@ public enum CodexResolver {
             let prefix = l.id == "codex" ? "" : (l.name ?? l.id.replacingOccurrences(of: "codex_", with: "")) + " "
             for w in l.windows.sorted(by: { $0.minutes < $1.minutes }) {
                 let passed = w.resetsAt.map { $0 <= now } ?? false
-                var row = LimitRow(kind: .codex("\(l.id):\(w.minutes)"), name: prefix + windowName(w.minutes),
+                let window = windowName(w.minutes)
+                let name = prefix.isEmpty ? window : prefix + L(window, window.lowercased())   // "Spark weekly"
+                var row = LimitRow(kind: .codex("\(l.id):\(w.minutes)"), name: name,
                                    percent: passed ? 0 : w.percent, resetsAt: passed ? nil : w.resetsAt, isActive: false)
                 if passed { row.percentInferred = true }   // 리셋이 지났으니 0%로 본다(다른 기기 사용분은 모름)
                 rows.append(row)
@@ -189,13 +195,13 @@ public enum CodexResolver {
                             credits: main?.credits.flatMap { $0.hasCredits || $0.unlimited ? $0 : nil })
     }
 
-    static func windowName(_ minutes: Int) -> String {
+    public static func windowName(_ minutes: Int, lang: Lang = .current) -> String {
         switch minutes {
-        case 300: "5시간"
-        case 10080: "주간"
-        case let m where m % 1440 == 0: "\(m / 1440)일"
-        case let m where m % 60 == 0: "\(m / 60)시간"
-        case let m: "\(m)분"
+        case 300: LimitNames.fiveHour(lang)
+        case 10080: LimitNames.weekly(lang)
+        case let m where m % 1440 == 0: L("\(m / 1440)일", "\(m / 1440)-day", lang: lang)
+        case let m where m % 60 == 0: L("\(m / 60)시간", "\(m / 60)-hour", lang: lang)
+        case let m: L("\(m)분", "\(m)-min", lang: lang)
         }
     }
 

@@ -1,6 +1,10 @@
 import Foundation
 import Testing
+
 @testable import UsageCore
+
+/// 테스트는 실행 환경의 언어(한국어/영어)와 무관하게 통과해야 한다
+private var W: String { LimitNames.weekly() }
 
 @Suite struct CodexTests {
     let now = date("2026-09-29T03:00:00Z")   // 12:00 KST
@@ -52,7 +56,7 @@ import Testing
         #expect(s.observedAt == date("2026-09-29T02:32:00.000Z"))
 
         let d = try #require(CodexResolver.resolve(s, now: now))
-        #expect(d.rows.map(\.name) == ["주간", "GPT-5.3-Codex-Spark 5시간", "GPT-5.3-Codex-Spark 주간"])
+        #expect(d.rows.map(\.name) == [W, "GPT-5.3-Codex-Spark " + L("5시간", "5-hour"), "GPT-5.3-Codex-Spark " + L("주간", "weekly")])
         #expect(d.active?.percent == 45)
         #expect(d.plan == "Pro")
         #expect(d.isStale == false)
@@ -67,7 +71,7 @@ import Testing
                                                  secondary: (20, 10080, weekReset))],
         ])
         let d = try #require(CodexResolver.resolve(CodexLogReader(root: r, calendar: seoul).read(now: now), now: now))
-        #expect(d.rows.map(\.name) == ["5시간", "주간"])                    // 8일 넘은 한도는 안 보임
+        #expect(d.rows.map(\.name) == [LimitNames.fiveHour(), W])                    // 8일 넘은 한도는 안 보임
         #expect(d.rows[0].percent == 0)                                     // 리셋 시각이 지난 창은 0%
         #expect(d.rows[0].resetsAt == nil)
     }
@@ -103,10 +107,13 @@ import Testing
     }
 
     @Test func windowNames() {
-        #expect(CodexResolver.windowName(300) == "5시간")
-        #expect(CodexResolver.windowName(10080) == "주간")
-        #expect(CodexResolver.windowName(1440) == "1일")
-        #expect(CodexResolver.windowName(90) == "90분")
+        #expect(CodexResolver.windowName(300, lang: .ko) == "5시간")
+        #expect(CodexResolver.windowName(10080, lang: .ko) == "주간")
+        #expect(CodexResolver.windowName(1440, lang: .ko) == "1일")
+        #expect(CodexResolver.windowName(90, lang: .ko) == "90분")
+        #expect(CodexResolver.windowName(300, lang: .en) == "5-hour")
+        #expect(CodexResolver.windowName(10080, lang: .en) == "Weekly")
+        #expect(CodexResolver.windowName(90, lang: .en) == "90-min")
         #expect(CodexResolver.planLabel("prolite") == "Pro Lite")
     }
 }
@@ -193,12 +200,12 @@ import Testing
         let stateURL = FileManager.default.temporaryDirectory.appendingPathComponent("st-\(UUID().uuidString).json")
 
         let out = await engine(root: root, stateURL: stateURL).tick(force: false, interval: 180, claude: false, codex: true)
-        #expect(out.codex?.rows.map(\.name) == ["주간", "Spark 주간"])
+        #expect(out.codex?.rows.map(\.name) == [W, "Spark " + L("주간", "weekly")])
 
         // 파일이 없어진 뒤 다시 켜도 저장해 둔 한도가 남는다
         let empty = try helper.root(["2026/09/29/rollout-b.jsonl": [helper.line("2026-09-29T02:10:00.000Z", id: "codex", primary: (46, 10080, week))]])
         let again = await engine(root: empty, stateURL: stateURL).tick(force: false, interval: 180, claude: false, codex: true)
-        #expect(again.codex?.rows.map(\.name) == ["주간", "Spark 주간"])
+        #expect(again.codex?.rows.map(\.name) == [W, "Spark " + L("주간", "weekly")])
         #expect(again.codex?.rows.first?.percent == 46)
     }
 

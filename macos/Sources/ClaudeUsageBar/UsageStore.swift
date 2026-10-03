@@ -103,6 +103,35 @@ final class UsageStore {
         onChange?()
     }
 
+    /// 문서 이미지용 고정 예시 값(스냅샷 모드). 실제 계정 정보가 이미지에 남지 않고, 언제 찍어도 같은 모습이 된다.
+    func loadDemo(now: Date = Date()) {
+        var d = DisplayState()
+        var five = LimitRow(kind: .session, name: "", percent: 42, resetsAt: now + 2 * 3600 + 14 * 60 + 30, isActive: true)
+        five.name = five.displayName
+        d.rows = [five,
+                  LimitRow(kind: .weekly, name: "", percent: 27, resetsAt: now + 4 * 86400 + 3 * 3600 + 30, isActive: false),
+                  LimitRow(kind: .model("Opus"), name: "", percent: 18, resetsAt: now + 4 * 86400 + 3 * 3600 + 30, isActive: false)]
+        d.credit = Credit(enabled: true, used: 12.4, limit: 50, currency: "USD", percent: 24.8)
+        d.source = .api
+        d.status = .ok
+        d.asOf = now - 60
+        d.plan = "Max 5x"
+        display = d
+        var t = TokenTally()
+        t.input = 1_200_000; t.output = 410_000; t.cacheWrite = 2_300_000; t.cacheRead = 14_700_000; t.messages = 612
+        tokens = t
+        codex = CodexDisplay(rows: [
+            LimitRow(kind: .codex("codex:300"), name: CodexResolver.windowName(300), percent: 23,
+                     resetsAt: now + 3 * 3600 + 10 * 60 + 30, isActive: false),
+            LimitRow(kind: .codex("codex:10080"), name: CodexResolver.windowName(10080), percent: 45,
+                     resetsAt: now + 5 * 86400 + 2 * 3600 + 30, isActive: false),
+        ], plan: "Pro", asOf: now - 180, isStale: false)
+        var ct = CodexTokenTally()
+        ct.input = 5_900_000; ct.cachedInput = 5_100_000; ct.output = 300_000; ct.total = 6_200_000; ct.sessions = 4
+        codexTokens = ct
+        codexAPIKey = false
+    }
+
     private func evaluateAlerts() {
         let before = alertState
         var events = settings.showClaude ? alertState.evaluate(display, now: Date(), settings: settings.alerts) : []

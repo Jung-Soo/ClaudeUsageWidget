@@ -45,6 +45,10 @@ public struct Credit: Sendable, Equatable, Codable {
     public var limit: Double?
     public var currency: String
     public var percent: Double?
+
+    public init(enabled: Bool, used: Double?, limit: Double?, currency: String, percent: Double?) {
+        self.enabled = enabled; self.used = used; self.limit = limit; self.currency = currency; self.percent = percent
+    }
 }
 
 /// API 한 번 성공했을 때의 스냅샷.

@@ -62,16 +62,20 @@ public struct AlertState: Sendable, Equatable, Codable {
 
             let cycle = cycleKey(row)
             let key = "\(row.id)|\(cycle)"
-            let left = Format.left(until: row.resetsAt, now: now).map { "\($0) 후 리셋" } ?? "리셋 시각 모름"
+            let left = Format.left(until: row.resetsAt, now: now).map { L("\($0) 후 리셋", "resets in \($0)") }
+                ?? L("리셋 시각 모름", "reset time unknown")
+            let name = row.displayName
             let pct = Format.percent(p)
 
             if p >= 100, mark(key, "full", also: ["alert", "warn"]) {
-                let extra = d.credit?.enabled == true ? " 지금부터는 추가 크레딧(유료)으로 넘어갈 수 있어요." : ""
-                out.append(AlertEvent(kind: .full, title: "\(row.name) 한도 도달", body: "\(left).\(extra)"))
+                let extra = d.credit?.enabled == true
+                    ? L(" 지금부터는 추가 크레딧(유료)으로 넘어갈 수 있어요.", " Further usage may draw on paid extra credits.") : ""
+                out.append(AlertEvent(kind: .full, title: L("\(name) 한도 도달", "\(name) limit reached"), body: "\(left).\(extra)"))
             } else if p >= s.dangerPct, p < 100, mark(key, "alert", also: ["warn"]) {
-                out.append(AlertEvent(kind: .danger, title: "\(row.name) 한도 \(pct)%", body: "곧 한도에 걸려요 · \(left)"))
+                out.append(AlertEvent(kind: .danger, title: L("\(name) 한도 \(pct)%", "\(name) limit \(pct)%"),
+                                      body: L("곧 한도에 걸려요 · \(left)", "Almost at the limit · \(left)")))
             } else if p >= s.warnPct, p < s.dangerPct, mark(key, "warn") {
-                out.append(AlertEvent(kind: .warn, title: "\(row.name) 한도 \(pct)%", body: left))
+                out.append(AlertEvent(kind: .warn, title: L("\(name) 한도 \(pct)%", "\(name) limit \(pct)%"), body: left))
             }
 
             if s.pace, p >= 50, p < s.dangerPct, let first = h.first, h.count >= 2 {
@@ -81,8 +85,8 @@ public struct AlertState: Sendable, Equatable, Codable {
                     let toReset = row.resetsAt.map { $0.timeIntervalSince(now) } ?? .infinity
                     if eta < 3600, eta < toReset, mark(key, "pace") {
                         let m = max(1, Int((eta / 60).rounded()))
-                        out.append(AlertEvent(kind: .pace, title: "이 속도면 약 \(m)분 뒤 \(row.name) 한도",
-                                              body: "지금 \(pct)% · \(left)"))
+                        out.append(AlertEvent(kind: .pace, title: L("이 속도면 약 \(m)분 뒤 \(name) 한도", "At this pace, \(name) limit in ~\(m) min"),
+                                              body: L("지금 \(pct)% · \(left)", "Now \(pct)% · \(left)")))
                     }
                 }
             }
@@ -94,8 +98,9 @@ public struct AlertState: Sendable, Equatable, Codable {
                     lastCreditNote = now
                     let total = Format.money(used, currency: c.currency) ?? ""
                     let delta = Format.money(used - seen, currency: c.currency) ?? ""
-                    out.append(AlertEvent(kind: .credit, title: "추가 크레딧 사용 중",
-                                          body: "이번 달 \(total) (+\(delta)). 한도를 넘긴 사용분은 유료예요."))
+                    out.append(AlertEvent(kind: .credit, title: L("추가 크레딧 사용 중", "Using extra credits"),
+                                          body: L("이번 달 \(total) (+\(delta)). 한도를 넘긴 사용분은 유료예요.",
+                                                  "\(total) this month (+\(delta)). Usage beyond the limit is billed.")))
                     creditSeen = used
                 }
             } else if creditSeen == nil || used < creditSeen! {

@@ -168,7 +168,7 @@ public actor UsageEngine {
         guard let latest = samples.max(by: { $0.t < $1.t }), latest.t != lastDesktopSample else { return }
         let f = DateFormatter()
         f.dateFormat = "MM-dd HH:mm"
-        log("[desktop] \(lastDesktopSample == nil ? "마지막 기록" : "새 기록") \(f.string(from: latest.t)) 5h=\(latest.fiveHour.map { "\(Int($0))" } ?? "-") week=\(latest.weekly.map { "\(Int($0))" } ?? "-")")
+        log("[desktop] \(lastDesktopSample == nil ? "last sample" : "new sample") \(f.string(from: latest.t)) 5h=\(latest.fiveHour.map { "\(Int($0))" } ?? "-") week=\(latest.weekly.map { "\(Int($0))" } ?? "-")")
         lastDesktopSample = latest.t
     }
 
@@ -225,11 +225,11 @@ public actor UsageEngine {
                 state.policy.failed(now: now, interval: interval)
                 log("[usage] HTTP \(code) \(body)")
             case .decoding(let m):
-                state.status = .error("응답 형식 변경")
+                state.status = .error(FetchError.format)
                 state.policy.failed(now: now, interval: interval)
                 log("[usage] decoding \(m)")
             case .network(let m):
-                state.status = .error("네트워크")
+                state.status = .error(FetchError.network)
                 state.policy.failed(now: now, interval: interval)
                 log("[usage] network \(m)")
             }
